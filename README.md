@@ -7,9 +7,29 @@ Xử lý đúng 2 vấn đề:
 
 Link video không nằm trong HTML — nó chỉ sinh ra khi player chạy và gọi request. Nên cả hai công cụ bắt link đều hook vào tầng network lúc runtime, chứ không đọc HTML tĩnh.
 
-## Yêu cầu
+## Cài đặt
 
-Có sẵn trên máy: `ffmpeg`, Python 3.12, `requests`, `cryptography`, `tqdm`. Playwright chỉ cần nếu dùng chế độ tự động.
+Python 3.8 trở lên (đã chạy thực tế trên 3.12):
+
+```bash
+pip install -r requirements.txt
+```
+
+Cần thêm **ffmpeg** trên PATH — dùng để ghép các mảnh, không cài bằng pip được:
+
+```bash
+winget install Gyan.FFmpeg      # Windows
+brew install ffmpeg             # macOS
+sudo apt install ffmpeg         # Debian/Ubuntu
+```
+
+Chỉ khi dùng [auto_grab.js](auto_grab.js) mới cần thêm Playwright:
+
+```bash
+npm i playwright && npx playwright install chromium
+```
+
+`grab.js` không cần cài gì — nó chạy thẳng trong Console trình duyệt.
 
 ## Cấu hình: [.env](.env)
 

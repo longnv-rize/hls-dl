@@ -1,0 +1,22 @@
+# Thu vien Python cho hls_dl.py va merge_local.py
+#     pip install -r requirements.txt
+#
+# Ngoai ra can ffmpeg tren PATH - KHONG cai duoc bang pip:
+#     Windows: winget install Gyan.FFmpeg
+#     macOS:   brew install ffmpeg
+#     Debian:  sudo apt install ffmpeg
+#
+# auto_grab.js can Playwright (Node, khong lien quan file nay):
+#     npm i playwright && npx playwright install chromium
+#
+# Can Python 3.8 tro len. Da chay thuc te tren 3.12.
+
+# Tai manh .ts, giu session va header (Referer/Cookie)
+requests>=2.25.0
+
+# Giai ma AES-128 cho playlist co #EXT-X-KEY.
+# Can >=3.1: tu ban do tham so backend= moi thanh tuy chon.
+cryptography>=3.1
+
+# Thanh tien trinh khi tai cac manh song song
+tqdm>=4.60.0
