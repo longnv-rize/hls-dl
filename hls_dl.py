@@ -110,6 +110,16 @@ def env_bool(key, default=False):
     return str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
+def gioi_han_duong_dan():
+    """Do dai toi da cua ca duong dan dich.
+
+    Windows chet o 260 ky tu neu chua bat long path, va do la mac dinh tren
+    phan lon may. Chua 250 de con cho cho cac hau to tam. Cac he khac rong
+    hon nhieu nen khong can that chat.
+    """
+    return env_int("MAX_PATH_LEN", 250 if os.name == "nt" else 4000)
+
+
 def out_path(outdir, title, index=None, ext=".mp4", series=None):
     """Dung duong dan file tu NAME_TEMPLATE trong .env.
 
@@ -127,7 +137,27 @@ def out_path(outdir, title, index=None, ext=".mp4", series=None):
 
     if series and env_bool("GROUP_BY_SERIES", True):
         outdir = os.path.join(outdir, safe_name(series))
-    return os.path.join(outdir, safe_name(stem) + ext)
+
+    stem = safe_name(stem)
+    duong_dan = os.path.join(outdir, stem + ext)
+
+    # safe_name moi cat TUNG PHAN o 120 ky tu; tong ca duong dan van co the
+    # vuot gioi han cua he thong. Cat bot tu CUOI ten, giu nguyen tien to so
+    # thu tu o dau: mat vai chu cuoi ten tap thi van biet la tap nao, con mat
+    # so thu tu thi hong ca thu tu sap xep lan viec phan biet cac tap voi nhau.
+    gioi_han = gioi_han_duong_dan()
+    thua = len(os.path.abspath(duong_dan)) - gioi_han
+    if thua <= 0:
+        return duong_dan
+
+    cho_phep = len(stem) - thua
+    if cho_phep < 8:
+        raise RuntimeError(
+            f"duong dan dich dai {len(os.path.abspath(duong_dan))} ky tu,"
+            f" qua gioi han {gioi_han} - hay chon OUTPUT_DIR ngan hon")
+    print(f"  ! ten file bi cat bot cho vua gioi han {gioi_han} ky tu",
+          file=sys.stderr)
+    return os.path.join(outdir, safe_name(stem[:cho_phep]) + ext)
 
 
 # ----------------------------------------------------------------- m3u8

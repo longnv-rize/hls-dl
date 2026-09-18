@@ -102,5 +102,71 @@ class ThuTuManhTaiSan(unittest.TestCase):
         self.assertEqual(merge_local.report_gaps(['a_1.ts', 'a_2.ts', 'a_3.ts']), [])
 
 
+class GioiHanDoDaiDuongDan(unittest.TestCase):
+    """safe_name chi cat TUNG PHAN o 120 ky tu; tong ca duong dan van co the vuot.
+
+    Windows chet o 260 ky tu neu chua bat long path. Truong hop xau nhat truoc
+    day sinh ra duong dan 255 ky tu - cach gioi han dung 5 ky tu, tuc chi can
+    ten tac pham dai hon mot chut la vo, va chi vo khi gap dung bo do.
+    """
+
+    KHOA = ('MAX_PATH_LEN', 'NAME_TEMPLATE', 'GROUP_BY_SERIES')
+
+    def setUp(self):
+        self._cu = {k: os.environ.get(k) for k in self.KHOA}
+        os.environ['NAME_TEMPLATE'] = '{index:03d} - {title}'
+        os.environ['GROUP_BY_SERIES'] = 'true'
+        os.environ['MAX_PATH_LEN'] = '250'
+
+    def tearDown(self):
+        for k, v in self._cu.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def dai(self, p):
+        return len(os.path.abspath(p))
+
+    def test_ten_ngan_thi_khong_dung_toi(self):
+        p = hls_dl.out_path('/ra', 'E1. Ten ngan', 1, series='Bo phim')
+        self.assertEqual(os.path.basename(p), '001 - E1. Ten ngan.mp4')
+
+    def test_ten_dai_bi_cat_cho_vua(self):
+        p = hls_dl.out_path('/ra', 'E999. ' + 'x' * 300, 999, series='y' * 300)
+        self.assertLessEqual(self.dai(p), 250)
+
+    def test_giu_tien_to_so_thu_tu_khi_cat(self):
+        # mat vai chu cuoi ten thi van biet la tap nao; mat so thu tu thi hong
+        # ca thu tu sap xep lan viec phan biet cac tap voi nhau
+        p = hls_dl.out_path('/ra', 'E7. ' + 'x' * 300, 7, series='y' * 300)
+        self.assertTrue(os.path.basename(p).startswith('007 - '))
+
+    def test_giu_duoi_file_khi_cat(self):
+        p = hls_dl.out_path('/ra', 'E7. ' + 'x' * 300, 7, series='y' * 300)
+        self.assertTrue(os.path.basename(p).endswith('.mp4'))
+
+    def test_hai_tap_ten_dai_giong_nhau_van_khac_file(self):
+        a = hls_dl.out_path('/ra', 'E1. ' + 'x' * 300, 1, series='y' * 300)
+        b = hls_dl.out_path('/ra', 'E2. ' + 'x' * 300, 2, series='y' * 300)
+        self.assertNotEqual(os.path.basename(a), os.path.basename(b))
+
+    def test_khong_de_lai_dau_cach_hay_dau_cham_o_cuoi(self):
+        p = hls_dl.out_path('/ra', 'E1. ' + 'a b . ' * 80, 1, series='y' * 200)
+        ten = os.path.splitext(os.path.basename(p))[0]
+        self.assertEqual(ten, ten.rstrip(' .'))
+
+    def test_thu_muc_dich_qua_sau_thi_bao_loi_ro_rang(self):
+        # khong con du cho cho ten -> phai noi thang thay vi tao duong dan hong
+        with self.assertRaises(RuntimeError) as e:
+            hls_dl.out_path('/' + 'd' * 240, 'E1. Ten', 1, series='Bo phim')
+        self.assertIn('OUTPUT_DIR', str(e.exception))
+
+    def test_dat_duoc_gioi_han_rieng(self):
+        os.environ['MAX_PATH_LEN'] = '120'
+        p = hls_dl.out_path('/ra', 'E1. ' + 'x' * 300, 1, series='y' * 60)
+        self.assertLessEqual(self.dai(p), 120)
+
+
 if __name__ == '__main__':
     unittest.main()

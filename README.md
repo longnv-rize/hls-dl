@@ -55,6 +55,7 @@ OUTPUT_DIR=D:/Videos
 | | `GROUP_BY_SERIES` | `true` → mỗi tác phẩm một thư mục riêng |
 | Đăng nhập | `COOKIE` `AUTH_HEADER` `REFERER` | chỉ cần khi chạy `hls_dl.py` trực tiếp |
 | Tải | `OUTPUT_DIR` `MANIFEST` `WORKERS` `RETRIES` | thư mục lưu, file manifest, số luồng, số lần thử lại |
+| | `MAX_PATH_LEN` | độ dài tối đa cả đường dẫn; mặc định 250 trên Windows |
 | Playwright | `BROWSER_PROFILE` `HEADLESS` `WAIT_MS` `SETTLE_MS` | phiên đăng nhập, chạy ẩn, thời gian chờ |
 
 Thứ tự ưu tiên: **dòng lệnh > biến môi trường > `.env` > mặc định**.
@@ -84,6 +85,8 @@ Muốn biết trang của bạn cho ra gì thì dán [grab.js](grab.js) vào Con
 | `{index:03d} - {title}` *(mặc định)* | `001 - E1. Just an Old Book.mp4` |
 | `{title}` | `E1. Just an Old Book.mp4` |
 | `{series} - {title}` | `My Vampire System - E1. Just an Old Book.mp4` |
+
+Tên quá dài thì bị **cắt bớt từ cuối**, giữ nguyên tiền tố số thứ tự — mất vài chữ cuối thì vẫn biết là tập nào, mất số thứ tự thì hỏng cả thứ tự sắp xếp. Thư mục đích sâu tới mức không còn chỗ cho tên thì nó báo lỗi thay vì tạo đường dẫn hỏng.
 
 Nên giữ `{index:03d}` ở đầu: tên tập tuy đã có số, nhưng File Explorer sắp theo chữ cái nên ra `E1, E10, E11, E2`. Số zero-pad mới cho đúng thứ tự.
 
@@ -259,7 +262,7 @@ Tự cảnh báo và dừng nếu số thứ tự đứt quãng (thiếu mảnh 
 ## Chạy test
 
 ```bash
-python -m unittest discover -s tests    # 92 test
+python -m unittest discover -s tests    # 100 test
 node tests/test_grab_js.js              # 32 assertion
 ```
 
