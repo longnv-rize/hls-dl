@@ -24,7 +24,7 @@ function trich(ten) {
 
 // eslint-disable-next-line no-eval
 eval(['EPISODE_RE', 'NGAN', 'TU_TAP', 'shapeOf', 'numOf', 'pickEpisodes',
-  'episodeNumIn', 'stripEpisode', 'dirOf']
+  'episodeNumIn', 'stripEpisode', 'dirOf', 'demLyDoLoai']
   .map(trich).join('\n').replace(/\bconst /g, 'var '));
 
 let hong = 0;
@@ -127,6 +127,28 @@ test('nhieu url mot tap -> gom con mot theo thu muc', () => {
 
 test('bo qua tham so query khi so thu muc', () => {
   assert.strictEqual(dirOf('https://cdn/x/y/z.m3u8?token=abc'), 'https://cdn/x/y/');
+});
+
+console.log('');
+console.log('So tap khi co tien to mua:');
+[['E7. Ten', 7],
+ ['S2E5. Ten', 5],        // so dau la MUA, so sau moi la tap
+ ['S2 E5. Ten', 5],
+ ['2x05 Ten', 5],
+ ['E10. Ten', 10],
+ ['Prologue', null],      // khong co so -> bi loai, nhung co dem lai
+].forEach(([s, mong]) => {
+  test(`${JSON.stringify(s)} -> ${mong}`, () => assert.strictEqual(numOf(s), mong));
+});
+
+console.log('');
+console.log('Dem cac muc bi loai va ly do:');
+test('tach rieng "khong co so" va "trung so"', () => {
+  const vao = ['E1. A', 'E2. B', 'E2. Trung', 'Prologue', 'Ngoai truyen'];
+  assert.strictEqual(pickEpisodes(vao).length, 2);
+  const d = demLyDoLoai(vao);
+  assert.strictEqual(d.trung, 1, 'phai dem duoc 1 muc trung so');
+  assert.strictEqual(d.khongSo, 2, 'phai dem duoc 2 muc khong co so');
 });
 
 console.log(hong ? `\n${hong} test HONG\n` : '\nTat ca test deu qua\n');

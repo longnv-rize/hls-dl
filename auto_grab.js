@@ -142,7 +142,12 @@ async function tagEpisodes(page, selector, reSource) {
       return m ? m[1].toLowerCase() + '|' + m[2] : '?';
     };
     const numIn = (t) => {
-      const m = t.match(/^[^\s\d]*[\s\-–.]*(\d+)/);
+      const s = String(t);
+      // So DAU la mua, so SAU moi la tap: "S2E5" phai ra 5, khong phai 2.
+      const mua = s.match(/^\s*\d+\s*[xX]\s*(\d+)/)
+               || s.match(/^\s*S\s*\d+\s*E\s*(\d+)/i);
+      if (mua) return parseInt(mua[1], 10);
+      const m = s.match(/^[^\s\d]*[\s\-–.]*(\d+)/);
       return m ? parseInt(m[1], 10) : null;
     };
 

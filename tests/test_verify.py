@@ -21,11 +21,16 @@ class NguongCanhBao(unittest.TestCase):
 
     def setUp(self):
         self._that = hls_dl.probe_duration
+        self._tieng = hls_dl.co_luong_tieng
         self._env = os.environ.get('VERIFY_OUTPUT')
         os.environ['VERIFY_OUTPUT'] = 'true'
+        # cac test o day dung duong dan gia, nen phai chan luon phep hoi ffprobe
+        # ve tieng - khong thi no bao "khong co tieng" va lan at ket qua can do
+        hls_dl.co_luong_tieng = lambda _p: True
 
     def tearDown(self):
         hls_dl.probe_duration = self._that
+        hls_dl.co_luong_tieng = self._tieng
         if self._env is None:
             os.environ.pop('VERIFY_OUTPUT', None)
         else:

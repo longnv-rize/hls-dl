@@ -259,8 +259,8 @@ Tự cảnh báo và dừng nếu số thứ tự đứt quãng (thiếu mảnh 
 ## Chạy test
 
 ```bash
-python -m unittest discover -s tests    # 79 test
-node tests/test_grab_js.js              # 27 assertion
+python -m unittest discover -s tests    # 92 test
+node tests/test_grab_js.js              # 32 assertion
 ```
 
 Không cần cài thêm gì — dùng `unittest` của stdlib và `assert` của Node.
@@ -270,6 +270,7 @@ Dữ liệu test lấy từ các lần chạy thật, không bịa ra, nên nó 
 | Test | Canh điều gì |
 |---|---|
 | `test_grab_js.js` | 22 mục thật trên trang phải lọc còn 20 tập; `EP-36` có gạch nối phải cắt đúng; mỗi tập chỉ giữ 1 master playlist |
+| `test_hls_audio.py` | HLS tách tiếng riêng (không xử lý thì ra **video câm** mà kiểm thời lượng vẫn cho qua), phát trực tiếp, lưới an toàn cho tiếng |
 | `test_dash.py` | các cách MPD mô tả danh sách mảnh, chọn luồng bitrate cao nhất cho cả hình và tiếng |
 | `test_verify.py` | ngưỡng cảnh báo và ngưỡng báo lỗi khi file ghép ra không khớp thời lượng |
 | `test_playlist.py` | chọn variant bitrate cao nhất, AES-128, fMP4, byte-range, `METHOD=NONE` giữa chừng |
@@ -282,7 +283,7 @@ Cái cuối có lý do cụ thể: trong lúc phát triển, một lệnh `cp .e
 
 ## Đã có
 
-- **HLS**: master playlist → tự chọn variant bitrate cao nhất; AES-128 kể cả khi playlist đổi key giữa chừng; fMP4 (`#EXT-X-MAP`); `#EXT-X-BYTERANGE`
+- **HLS**: master playlist → tự chọn variant bitrate cao nhất; `#EXT-X-MEDIA` tách tiếng riêng thì tải cả hai rồi ghép; AES-128 kể cả khi playlist đổi key giữa chừng; fMP4 (`#EXT-X-MAP`); `#EXT-X-BYTERANGE`
 - **DASH**: `SegmentTemplate` đếm theo số hoặc theo `SegmentTimeline` (kể cả `r=` lặp), `$Number%05d$`, `$Time$`, `SegmentList`, Representation là file đơn, chuỗi `BaseURL`. Hình và tiếng tách riêng thì tải cả hai rồi ghép lại
 - **File tải thẳng**: `.mp4`, `.mkv`, `.webm`, `.mov`
 - Resume: chạy lại chỉ tải mảnh còn thiếu, bỏ qua video đã xong

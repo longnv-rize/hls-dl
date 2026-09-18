@@ -193,18 +193,43 @@ def parse(sess: requests.Session, url: str, depth: int = 0) -> Playlist:
     lines = [ln.strip() for ln in resp.text.splitlines() if ln.strip()]
 
     if any(ln.startswith("#EXT-X-STREAM-INF") for ln in lines):
-        best, best_bw = None, -1
+        # HLS cung co the tach tieng ra luong rieng giong DASH. Khong xu ly thi
+        # variant chi-co-hinh se cho ra video CAM - ma kiem thoi luong van dung,
+        # nen loi di qua hoan toan im lang.
+        tieng = {}
+        for ln in lines:
+            if not ln.startswith("#EXT-X-MEDIA"):
+                continue
+            a = _attrs(ln.split(":", 1)[1])
+            if a.get("TYPE") != "AUDIO" or not a.get("URI"):
+                continue
+            nhom = a.get("GROUP-ID", "")
+            if nhom not in tieng or a.get("DEFAULT", "").upper() == "YES":
+                tieng[nhom] = a["URI"]
+
+        best, best_bw, best_a = None, -1, {}
         for i, ln in enumerate(lines):
             if not ln.startswith("#EXT-X-STREAM-INF"):
                 continue
-            bw = int(_attrs(ln.split(":", 1)[1]).get("BANDWIDTH", 0))
+            a = _attrs(ln.split(":", 1)[1])
+            bw = int(a.get("BANDWIDTH", 0))
             nxt = next((l for l in lines[i + 1:] if not l.startswith("#")), None)
             if nxt and bw > best_bw:
-                best, best_bw = nxt, bw
+                best, best_bw, best_a = nxt, bw, a
         if not best:
             raise RuntimeError("master playlist khong co variant nao")
         print(f"  master playlist -> chon variant {best_bw // 1000} kbps")
-        return parse(sess, urlparse.urljoin(url, best), depth + 1)
+        pl = parse(sess, urlparse.urljoin(url, best), depth + 1)
+
+        # Chi ghep them tieng khi variant that su KHONG co san tieng ben trong.
+        # CODECS co mp4a/ac-3/... nghia la tieng da nam chung trong manh roi;
+        # ghep them nua se thanh hai luong tieng chong nhau.
+        nhom = best_a.get("AUDIO")
+        co_san = bool(re.search(r"mp4a|ac-3|ec-3|opus|vorbis|dts", best_a.get("CODECS", ""), re.I))
+        if nhom and nhom in tieng and not co_san:
+            print(f"  tieng tach rieng (nhom {nhom}) -> tai them")
+            pl.audio = parse(sess, urlparse.urljoin(url, tieng[nhom]), depth + 1)
+        return pl
 
     segments = []
     key = None
@@ -243,6 +268,13 @@ def parse(sess: requests.Session, url: str, depth: int = 0) -> Playlist:
 
     if not segments:
         raise RuntimeError("khong tim thay manh .ts nao trong playlist")
+
+    # Khong co #EXT-X-ENDLIST = playlist con dang duoc noi dai (phat truc tiep).
+    # Tai duoc, nhung chi duoc doan dang co tai thoi diem nay, nen phai noi ro.
+    if not any(ln.startswith("#EXT-X-ENDLIST") for ln in lines):
+        print("  ! playlist khong co ENDLIST - co ve la phat truc tiep,"
+              " chi lay duoc doan hien co", file=sys.stderr)
+
     return Playlist(segments, init, total)
 
 
@@ -547,6 +579,18 @@ def probe_duration(path):
         return None
 
 
+def co_luong_tieng(path):
+    """File co luong tieng nao khong. None = khong hoi duoc ffprobe."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a",
+             "-show_entries", "stream=codec_type", "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=60)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    return bool(r.stdout.strip())
+
+
 def verify(target, mong_doi):
     """So thoi luong file vua ghep voi tong #EXTINF trong playlist.
 
@@ -563,6 +607,10 @@ def verify(target, mong_doi):
     if thuc is None:
         raise RuntimeError("ffprobe khong doc duoc file vua ghep - file hong")
 
+    # Kiem thoi luong TRUOC, vi no la cai duy nhat co the nem loi. Dat phep
+    # kiem tieng len truoc thi mot file vua cam tieng vua cut mot nua se chi
+    # bao cam tieng roi thoat, khong bao gio ném loi cut.
+    canh_bao = []
     lech = abs(thuc - mong_doi)
     nang = max(10.0, mong_doi * 0.05)
     nhe = max(3.0, mong_doi * 0.01)
@@ -571,9 +619,18 @@ def verify(target, mong_doi):
     if lech > nang:
         raise RuntimeError(f"file ghep ra sai nhieu: {mota}")
     if lech > nhe:
-        print(f"  ! canh bao: {mota}", file=sys.stderr)
-        return mota
-    return None
+        canh_bao.append(mota)
+
+    # Luoi an toan cho tieng: bat MOI nguyen nhan lam video cam, khong chi
+    # rieng cai da vá. Thoi luong dung ma khong co tieng thi phep kiem thoi
+    # luong khong bao gio phat hien duoc.
+    if env_bool("VERIFY_AUDIO", True) and co_luong_tieng(target) is False:
+        canh_bao.append("file khong co luong tieng nao"
+                        " - co the playlist tach tieng ra rieng")
+
+    for c in canh_bao:
+        print(f"  ! canh bao: {c}", file=sys.stderr)
+    return "; ".join(canh_bao) if canh_bao else None
 
 
 def dung_ytdlp():

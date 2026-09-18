@@ -103,7 +103,13 @@
     return m ? m[1].toLowerCase() + '|' + m[2] : '?';
   };
   const numOf = (t) => {
-    const m = t.match(/^[^\s\d]*\s*(\d+)/);
+    const s = String(t);
+    // Dang mua-tap thi so DAU la mua, so SAU moi la tap: "S2E5" phai ra 5,
+    // khong phai 2. Lay nham thi cac tap mua 2 se de len cac tap mua 1.
+    const mua = s.match(/^\s*\d+\s*[xX]\s*(\d+)/)          // 2x05
+             || s.match(/^\s*S\s*\d+\s*E\s*(\d+)/i);       // S2E5, S2 E5
+    if (mua) return parseInt(mua[1], 10);
+    const m = s.match(/^[^\s\d]*\s*(\d+)/);
     return m ? parseInt(m[1], 10) : null;
   };
 
@@ -129,6 +135,25 @@
       seen.add(n);
       return true;
     });
+  };
+
+  /**
+   * Dem xem trong danh sach tho co bao nhieu muc bi loai, va vi ly do gi.
+   * Dem tren TOAN BO dau vao chu khong phai trong nhom da chon: tap khong co so
+   * ("Prologue", "Ngoai truyen") bi loai ngay tu buoc gom nhom dinh dang, dem
+   * sau do se ra 0 va nhin vao tuong khong mat gi.
+   */
+  const demLyDoLoai = (all) => {
+    const khongSo = all.filter((t) => numOf(t) === null).length;
+    const seen = new Set();
+    let trung = 0;
+    all.forEach((t) => {
+      const n = numOf(t);
+      if (n === null) return;
+      if (seen.has(n)) trung += 1;
+      else seen.add(n);
+    });
+    return { khongSo, trung };
   };
 
   const episodeTitles = () => pickEpisodes(episodeNodes().map(txt));
@@ -434,7 +459,14 @@
       const raw = episodeNodes().length;
       console.log('Tac pham   :', seriesTitle());
       console.log('Ten tap    :', nodes.length ? nodes : '(khong nhan ra dang "E1. ...")');
-      if (raw > nodes.length) console.log(`             (loc bo ${raw - nodes.length} muc trung/header)`);
+      if (raw > nodes.length) {
+        const ly_do = [];
+        if (nodes.khongSo) ly_do.push(`${nodes.khongSo} khong co so tap`);
+        if (nodes.trung) ly_do.push(`${nodes.trung} trung so`);
+        console.log(`             (loc bo ${raw - nodes.length} muc`
+          + (ly_do.length ? `, trong do ${ly_do.join(' va ')}` : ', deu la header/dinh dang la')
+          + ')');
+      }
       console.log('Se dung    :', currentTitle());
       console.log('Da bat     :', playlists.size + ' playlist, ' + segments.size + ' nhom manh');
       console.log('DRM        :', drm
