@@ -1,0 +1,10 @@
+# bi mat + file to - dung dua len git
+.env
+browser-profile/
+manifest.json
+videos/
+node_modules/
+__pycache__/
+*.mp4
+*.ts
+done.txt
