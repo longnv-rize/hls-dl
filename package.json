@@ -1,0 +1,27 @@
+{
+  "name": "hls-dl",
+  "version": "1.0.0",
+  "description": "Xử lý đúng 2 vấn đề:",
+  "main": "auto_grab.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/longnv-rize/hls-dl.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/longnv-rize/hls-dl/issues"
+  },
+  "homepage": "https://github.com/longnv-rize/hls-dl#readme",
+  "dependencies": {
+    "playwright": "^1.63.0"
+  }
+}

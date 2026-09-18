@@ -147,7 +147,11 @@ python hls_dl.py
 
 `auto_grab.js` mở Chromium thật, cuộn hết danh sách tập (lazy load), rồi lần lượt mở/bấm từng tập, đợi link xuất hiện, ghi `manifest.json`. Xử lý được cả trang SPA khi bấm tập không chuyển trang.
 
-Lần đầu trình duyệt dừng lại cho bạn **đăng nhập bằng tay**, bấm Enter trong terminal là chạy tiếp. Phiên lưu ở `BROWSER_PROFILE` nên lần sau khỏi làm lại — cũng vì thế mà cách này không cần `COOKIE`.
+Lần đầu trình duyệt dừng lại cho bạn **đăng nhập bằng tay**, bấm Enter trong terminal là chạy tiếp. Phiên lưu ở `BROWSER_PROFILE` nên **từ lần thứ hai trở đi chạy thẳng, không hỏi gì** — đó chính là cơ chế tự đăng nhập.
+
+Chạy từ script hoặc CI (không có terminal để bấm Enter) thì nó tự bỏ qua bước dừng, hoặc đặt `NO_LOGIN_PAUSE=true` để bỏ qua kể cả khi có terminal.
+
+**Đã chạy thật** trên một trang công khai: cuộn tìm tập, bấm phát, bắt link, ghi manifest — ra đúng URL master playlist dùng được ngay.
 
 ## Cách 2 — thủ công (nhanh hơn nếu chỉ vài tập)
 

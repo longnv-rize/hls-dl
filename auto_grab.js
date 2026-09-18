@@ -101,10 +101,23 @@ const cfg = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Dung lai cho nguoi dung dang nhap roi bam Enter.
+ *
+ * Neu stdin khong phai terminal that (chay tu script khac, tu CI, hoac stdin
+ * noi vao thiet bi rong) thi khong bao gio co ai go Enter, va cho o day se
+ * treo vinh vien. Truong hop do phai di thang - phien dang nhap luu trong
+ * BROWSER_PROFILE nen tu lan thu hai tro di thuong khong can dung lai nua.
+ */
 const ask = (q) => new Promise((resolve) => {
+  if (!process.stdin.isTTY || String(env('NO_LOGIN_PAUSE', '')).toLowerCase() === 'true') {
+    console.log(`${q}(bo qua: khong co terminal de cho, hoac NO_LOGIN_PAUSE=true)`);
+    return resolve();
+  }
   process.stdout.write(q);
   process.stdin.resume();
   process.stdin.once('data', () => { process.stdin.pause(); resolve(); });
+  process.stdin.once('end', () => resolve());   // stdin dong giua chung
 });
 
 const numOf = (t) => {
@@ -280,6 +293,10 @@ async function startPlayback(page) {
 
   const ctx = await chromium.launchPersistentContext(path.resolve(cfg.profileDir), {
     headless: cfg.headless,
+    // Playwright chay an bang mot binary RIENG (chrome-headless-shell) ma lenh
+    // "npx playwright install chromium" khong tai ve. Chi dinh channel de dung
+    // lai chinh Chromium da co, khoi bat nguoi dung tai them mot ban nua.
+    ...(cfg.headless ? { channel: 'chromium' } : {}),
     viewport: { width: 1366, height: 900 },
     args: ['--autoplay-policy=no-user-gesture-required'],
   });
