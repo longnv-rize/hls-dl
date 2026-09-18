@@ -158,6 +158,11 @@ class Playlist:
     segments: list[Segment]
     init: str | None  # #EXT-X-MAP:URI= cho fMP4
     duration: float
+    # DASH thuong tach hinh va tieng thanh hai luong rieng, phai tai ca hai roi
+    # ghep lai. HLS thi tieng nam san trong .ts nen truong nay de None.
+    audio: "Playlist | None" = None
+    # mo ta nguon de in ra cho de doi chieu: "HLS", "DASH", "file"
+    kind: str = "HLS"
 
 
 def _attrs(line: str) -> dict:
@@ -241,6 +246,184 @@ def parse(sess: requests.Session, url: str, depth: int = 0) -> Playlist:
     return Playlist(segments, init, total)
 
 
+# ----------------------------------------------------------------- DASH (.mpd)
+
+DASH_NS = "{urn:mpeg:dash:schema:mpd:2011}"
+
+
+def iso_duration(s):
+    """PT10M47.5S -> 647.5 giay. Tra ve 0 neu khong doc duoc."""
+    m = re.match(r"^P(?:\d+D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?$", (s or "").strip())
+    if not m:
+        return 0.0
+    gio, phut, giay = m.groups()
+    return int(gio or 0) * 3600 + int(phut or 0) * 60 + float(giay or 0)
+
+
+def _fill(tpl, rep_id, bandwidth, number=None, time=None):
+    """Thay $Number$, $Time$, $RepresentationID$... trong mau URL cua DASH.
+
+    Ho tro ca dang co dinh dang nhu $Number%05d$ -> 00042.
+    """
+    def thay(m):
+        ten, dinh_dang = m.group(1), m.group(2)
+        gia_tri = {"RepresentationID": rep_id, "Bandwidth": bandwidth,
+                   "Number": number, "Time": time}.get(ten)
+        if gia_tri is None:
+            return m.group(0)
+        return (dinh_dang % int(gia_tri)) if dinh_dang else str(gia_tri)
+
+    ra = re.sub(r"\$(RepresentationID|Bandwidth|Number|Time)(%0\d+d)?\$", thay, tpl)
+    return ra.replace("$$", "$")
+
+
+def _base_url(nodes, goc):
+    """Noi chuoi BaseURL tu MPD -> Period -> AdaptationSet -> Representation."""
+    url = goc
+    for n in nodes:
+        b = n.find(DASH_NS + "BaseURL")
+        if b is not None and (b.text or "").strip():
+            url = urlparse.urljoin(url, b.text.strip())
+    return url
+
+
+def _segments_of(rep, aset, goc, tong_giay):
+    """Dung danh sach URL cac manh cho mot Representation."""
+    base = _base_url([rep], goc)
+    rep_id = rep.get("id", "")
+    bw = rep.get("bandwidth", "0")
+
+    tpl = rep.find(DASH_NS + "SegmentTemplate")
+    if tpl is None:
+        tpl = aset.find(DASH_NS + "SegmentTemplate")
+
+    if tpl is not None:
+        init = None
+        if tpl.get("initialization"):
+            init = urlparse.urljoin(base, _fill(tpl.get("initialization"), rep_id, bw))
+        media = tpl.get("media", "")
+        so_dau = int(tpl.get("startNumber", 1))
+        thang = float(tpl.get("timescale", 1)) or 1.0
+
+        urls = []
+        dong_ho = tpl.find(DASH_NS + "SegmentTimeline")
+        if dong_ho is not None:
+            # SegmentTimeline: moi <S> co the lap lai r lan
+            n, t = so_dau, 0
+            for s in dong_ho.findall(DASH_NS + "S"):
+                if s.get("t") is not None:
+                    t = int(s.get("t"))
+                d = int(s.get("d", 0))
+                for _ in range(int(s.get("r", 0)) + 1):
+                    urls.append(urlparse.urljoin(base, _fill(media, rep_id, bw, n, t)))
+                    n += 1
+                    t += d
+        elif tpl.get("duration"):
+            moi_manh = int(tpl.get("duration")) / thang
+            if moi_manh <= 0:
+                raise RuntimeError("SegmentTemplate co duration = 0")
+            import math
+            so_manh = max(1, math.ceil(tong_giay / moi_manh))
+            for i in range(so_manh):
+                urls.append(urlparse.urljoin(base, _fill(media, rep_id, bw, so_dau + i)))
+        else:
+            raise RuntimeError("SegmentTemplate khong co SegmentTimeline lan duration")
+        return urls, init
+
+    ds = rep.find(DASH_NS + "SegmentList")
+    if ds is not None:
+        init = None
+        i = ds.find(DASH_NS + "Initialization")
+        if i is not None and i.get("sourceURL"):
+            init = urlparse.urljoin(base, i.get("sourceURL"))
+        urls = [urlparse.urljoin(base, u.get("media"))
+                for u in ds.findall(DASH_NS + "SegmentURL") if u.get("media")]
+        return urls, init
+
+    # Khong co template lan list -> ca Representation la mot file don
+    return [base], None
+
+
+def parse_dash(sess, url):
+    """Doc file .mpd. Chon Representation bitrate cao nhat cho ca hinh va tieng."""
+    import xml.etree.ElementTree as ET
+    resp = sess.get(url, timeout=30)
+    resp.raise_for_status()
+    goc = ET.fromstring(resp.text)
+
+    tong = iso_duration(goc.get("mediaPresentationDuration"))
+    period = goc.find(DASH_NS + "Period")
+    if period is None:
+        raise RuntimeError("file .mpd khong co Period nao")
+    if not tong:
+        tong = iso_duration(period.get("duration"))
+
+    base = _base_url([goc, period], url)
+
+    def chon(loai):
+        """Lay Representation bitrate cao nhat trong cac AdaptationSet dung loai."""
+        tot, tot_bw, tot_set = None, -1, None
+        for aset in period.findall(DASH_NS + "AdaptationSet"):
+            kieu = (aset.get("contentType") or aset.get("mimeType") or "")
+            reps = aset.findall(DASH_NS + "Representation")
+            if loai not in kieu:
+                # co MPD khong ghi kieu o AdaptationSet ma o Representation
+                if not any(loai in (r.get("mimeType") or "") for r in reps):
+                    continue
+            for r in reps:
+                bw = int(r.get("bandwidth", 0))
+                if bw > tot_bw:
+                    tot, tot_bw, tot_set = r, bw, aset
+        return tot, tot_set, tot_bw
+
+    v, v_set, v_bw = chon("video")
+    if v is None:
+        raise RuntimeError("file .mpd khong co luong video nao")
+    print(f"  DASH -> chon video {v_bw // 1000} kbps")
+    v_urls, v_init = _segments_of(v, v_set, base, tong)
+    hinh = Playlist([Segment(u, i, None) for i, u in enumerate(v_urls)],
+                    v_init, tong, kind="DASH")
+
+    a, a_set, a_bw = chon("audio")
+    if a is not None and a is not v:
+        print(f"  DASH -> chon tieng {a_bw // 1000} kbps")
+        a_urls, a_init = _segments_of(a, a_set, base, tong)
+        hinh.audio = Playlist([Segment(u, i, None) for i, u in enumerate(a_urls)],
+                              a_init, tong, kind="DASH")
+    return hinh
+
+
+def parse_direct(url, tong=0.0):
+    """File video tai thang (mp4/mkv/webm), khong chia manh."""
+    return Playlist([Segment(url, 0, None)], None, tong, kind="file")
+
+
+def parse_source(sess, url):
+    """Nhan dien nguon roi giao cho bo doc tuong ung: HLS, DASH hay file don."""
+    duoi = url.split("?")[0].lower()
+    if duoi.endswith(".mpd"):
+        return parse_dash(sess, url)
+    if duoi.endswith(".m3u8"):
+        return parse(sess, url)
+    if re.search(r"\.(mp4|mkv|webm|mov|m4v)$", duoi):
+        return parse_direct(url)
+
+    # Khong doan duoc tu duoi file thi hoi server xem no tra ve kieu gi
+    try:
+        r = sess.head(url, timeout=20, allow_redirects=True)
+        ct = (r.headers.get("content-type") or "").lower()
+    except Exception:  # noqa: BLE001
+        ct = ""
+    if "mpegurl" in ct:
+        return parse(sess, url)
+    if "dash+xml" in ct:
+        return parse_dash(sess, url)
+    if ct.startswith("video/") or ct.startswith("audio/"):
+        return parse_direct(url)
+    # cuoi cung van cu thu doc nhu HLS, no se bao loi ro neu khong phai
+    return parse(sess, url)
+
+
 # ----------------------------------------------------------------- tai
 
 def decrypt(data: bytes, key: Key, sess: requests.Session, seq: int) -> bytes:
@@ -281,7 +464,44 @@ def grab(sess: requests.Session, seg: Segment, dest: str, retries: int) -> None:
     raise RuntimeError(f"manh #{seg.index} that bai sau {retries} lan: {last}")
 
 
-def merge(parts, init, target, workdir=None):
+def fetch_track(sess, pl, work, ten, workers, retries):
+    """Tai het cac manh cua MOT luong (hinh hoac tieng). Tra ve (list manh, init)."""
+    init_file = None
+    if pl.init:
+        init_file = os.path.join(work, f"{ten}-init.mp4")
+        grab(sess, Segment(pl.init, -1, None), init_file, retries)
+
+    parts = [os.path.join(work, f"{ten}-{s.index:06d}.seg") for s in pl.segments]
+    errors = []
+    with tqdm(total=len(pl.segments), unit="seg", desc=ten, leave=False) as bar:
+        def task(pair):
+            seg, dest = pair
+            try:
+                grab(sess, seg, dest, retries)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+            bar.update(1)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(task, zip(pl.segments, parts)))
+
+    if errors:
+        for e in errors[:5]:
+            print(f"  ! {e}", file=sys.stderr)
+        raise RuntimeError(f"{len(errors)}/{len(pl.segments)} manh loi - chay lai de resume")
+    return parts, init_file
+
+
+def _noi(parts, init, dest):
+    """Noi init + cac manh thanh mot file lien."""
+    with open(dest, "wb") as out:
+        for src in ([init] if init else []) + parts:
+            with open(src, "rb") as f:
+                shutil.copyfileobj(f, out)
+    return dest
+
+
+def merge(parts, init, target, workdir=None, a_parts=None, a_init=None):
     """Noi cac manh roi remux sang mp4 (copy stream - nhanh, khong giam chat luong).
 
     File noi tam (blob) phai nam o o dia noi bo, KHONG duoc de canh file dich.
@@ -289,18 +509,27 @@ def merge(parts, init, target, workdir=None):
     ~110MB blob len mang, ffmpeg doc nguoc lai tu mang, roi ghi tiep file mp4.
     Gap ba luot truyen thay vi mot.
     """
-    blob = os.path.join(workdir or os.path.dirname(os.path.abspath(target)),
-                        os.path.basename(target) + ".merged")
-    with open(blob, "wb") as out:
-        for src in ([init] if init else []) + parts:
-            with open(src, "rb") as f:
-                shutil.copyfileobj(f, out)
-    base = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", blob,
-            "-c", "copy", "-movflags", "+faststart"]
+    noi = workdir or os.path.dirname(os.path.abspath(target))
+    ten = os.path.basename(target)
+    blob = _noi(parts, init, os.path.join(noi, ten + ".v.merged"))
+    tam = [blob]
+
+    vao = ["-i", blob]
+    dat = []
+    if a_parts:
+        # DASH tach hinh va tieng -> phai dua ffmpeg hai file nguon roi ghep lai
+        ablob = _noi(a_parts, a_init, os.path.join(noi, ten + ".a.merged"))
+        tam.append(ablob)
+        vao += ["-i", ablob]
+        dat = ["-map", "0:v:0", "-map", "1:a:0"]
+
+    base = (["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"] + vao
+            + dat + ["-c", "copy", "-movflags", "+faststart"])
     if subprocess.run(base + ["-bsf:a", "aac_adtstoasc", target]).returncode != 0:
         # audio khong phai AAC/ADTS -> bo bitstream filter
         subprocess.run(base + [target], check=True)
-    os.remove(blob)
+    for f in tam:
+        os.remove(f)
 
 
 def probe_duration(path):
@@ -353,39 +582,26 @@ def download(url, target, sess, workers=8, retries=5, keep=False):
         return target
     os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
 
-    pl = parse(sess, url)
+    pl = parse_source(sess, url)
     work = os.path.join(tempfile.gettempdir(), "hls-dl",
                         safe_name(os.path.splitext(os.path.basename(target))[0], 60))
     os.makedirs(work, exist_ok=True)
 
-    init_file = None
-    if pl.init:
-        init_file = os.path.join(work, "init.mp4")
-        grab(sess, Segment(pl.init, -1, None), init_file, retries)
+    mota = f"  {pl.kind}: {len(pl.segments)} manh"
+    if pl.duration:
+        mota += f", ~{int(pl.duration // 60)}m{int(pl.duration % 60):02d}s"
+    if pl.segments[0].key:
+        mota += " [AES-128]"
+    if pl.audio:
+        mota += f", tieng rieng {len(pl.audio.segments)} manh"
+    print(mota)
 
-    parts = [os.path.join(work, f"{s.index:06d}.seg") for s in pl.segments]
-    print(f"  {len(pl.segments)} manh, ~{int(pl.duration // 60)}m{int(pl.duration % 60):02d}s"
-          + (" [AES-128]" if pl.segments[0].key else ""))
+    parts, init_file = fetch_track(sess, pl, work, "v", workers, retries)
+    a_parts = a_init = None
+    if pl.audio:
+        a_parts, a_init = fetch_track(sess, pl.audio, work, "a", workers, retries)
 
-    errors = []
-    with tqdm(total=len(pl.segments), unit="seg", leave=False) as bar:
-        def task(pair):
-            seg, dest = pair
-            try:
-                grab(sess, seg, dest, retries)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(exc)
-            bar.update(1)
-
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            list(pool.map(task, zip(pl.segments, parts)))
-
-    if errors:
-        for e in errors[:5]:
-            print(f"  ! {e}", file=sys.stderr)
-        raise RuntimeError(f"{len(errors)}/{len(pl.segments)} manh loi - chay lai de resume")
-
-    merge(parts, init_file, target, work)
+    merge(parts, init_file, target, work, a_parts, a_init)
     try:
         canh_bao = verify(target, pl.duration)
     except Exception:

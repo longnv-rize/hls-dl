@@ -1,8 +1,8 @@
-# hls-dl — tải video HLS, đặt tên theo tên tập
+# hls-dl — tải video streaming, đặt tên theo tên tập
 
 Xử lý đúng 2 vấn đề:
 
-1. **Một video bị chia thành nhiều `.ts`** → tải hết các mảnh đúng thứ tự trong playlist, giải mã AES-128 nếu có, ghép thành 1 `.mp4` (copy stream — nhanh, không giảm chất lượng).
+1. **Một video bị chia thành nhiều mảnh** → tải hết đúng thứ tự, giải mã AES-128 nếu có, ghép thành 1 `.mp4` (copy stream — nhanh, không giảm chất lượng). Nhận **HLS** (`.m3u8`), **DASH** (`.mpd`) và file tải thẳng; đoán không ra thì hỏi `Content-Type` của server.
 2. **Tên file lộn xộn** → tên mảnh trên server (`50d6c3f0..._seg_00001.ts`) *không bao giờ* dùng làm tên file. Tên lấy từ **tên tập trong DOM** (`E1. Just an Old Book`), thư mục lấy từ **tên tác phẩm** (`My Vampire System`).
 
 Link video không nằm trong HTML — nó chỉ sinh ra khi player chạy và gọi request. Nên cả hai công cụ bắt link đều hook vào tầng network lúc runtime, chứ không đọc HTML tĩnh.
@@ -195,7 +195,7 @@ Tự cảnh báo và dừng nếu số thứ tự đứt quãng (thiếu mảnh 
 ## Chạy test
 
 ```bash
-python -m unittest discover -s tests    # 42 test
+python -m unittest discover -s tests    # 64 test
 node tests/test_grab_js.js              # 27 assertion
 ```
 
@@ -206,6 +206,7 @@ Dữ liệu test lấy từ các lần chạy thật, không bịa ra, nên nó 
 | Test | Canh điều gì |
 |---|---|
 | `test_grab_js.js` | 22 mục thật trên trang phải lọc còn 20 tập; `EP-36` có gạch nối phải cắt đúng; mỗi tập chỉ giữ 1 master playlist |
+| `test_dash.py` | các cách MPD mô tả danh sách mảnh, chọn luồng bitrate cao nhất cho cả hình và tiếng |
 | `test_verify.py` | ngưỡng cảnh báo và ngưỡng báo lỗi khi file ghép ra không khớp thời lượng |
 | `test_playlist.py` | chọn variant bitrate cao nhất, AES-128, fMP4, byte-range, `METHOD=NONE` giữa chừng |
 | `test_naming.py` | ký tự cấm trên Windows, tên dành riêng (`CON`, `NUL`), phát hiện thiếu mảnh |
@@ -215,8 +216,9 @@ Cái cuối có lý do cụ thể: trong lúc phát triển, một lệnh `cp .e
 
 ## Đã có
 
-- Master playlist → tự chọn variant bitrate cao nhất (với site này là `mid` 720×720 — cũng chính là mức cao nhất họ có)
-- AES-128 kể cả khi playlist đổi key giữa chừng; fMP4 (`#EXT-X-MAP`); `#EXT-X-BYTERANGE`
+- **HLS**: master playlist → tự chọn variant bitrate cao nhất; AES-128 kể cả khi playlist đổi key giữa chừng; fMP4 (`#EXT-X-MAP`); `#EXT-X-BYTERANGE`
+- **DASH**: `SegmentTemplate` đếm theo số hoặc theo `SegmentTimeline` (kể cả `r=` lặp), `$Number%05d$`, `$Time$`, `SegmentList`, Representation là file đơn, chuỗi `BaseURL`. Hình và tiếng tách riêng thì tải cả hai rồi ghép lại
+- **File tải thẳng**: `.mp4`, `.mkv`, `.webm`, `.mov`
 - Resume: chạy lại chỉ tải mảnh còn thiếu, bỏ qua video đã xong
 - Retry có backoff, báo rõ mảnh nào hỏng
 - Tên file an toàn cho Windows, và console ép UTF-8 (không thì tên tiếng Việt có dấu làm crash cả tiến trình)
