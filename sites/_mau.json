@@ -1,0 +1,45 @@
+{
+  "_doc": [
+    "Mau ho so trang. Chep file nay thanh <ten-trang>.json roi sua.",
+    "File bat dau bang _ bi bo qua, nen file nay khong bao gio duoc dung that.",
+    "",
+    "Chi can dien nhung truong ma auto-nhan-dang lam SAI. De trong nghia la",
+    "dung mac dinh trong code - phan lon trang khong can dien gi ngoai match.",
+    "",
+    "Thu tu uu tien:  .env  >  ho so nay  >  mac dinh trong code."
+  ],
+
+  "match": ["vidu.com", "www.vidu.com"],
+  "_match": "Ten mien. Khop ca mien phu: 'vidu.com' khop luon 'a.vidu.com'.",
+
+  "episodeSelector": "",
+  "_episodeSelector": [
+    "CSS selector cua cac muc trong muc luc tap.",
+    "De trong = tu nhan dang bang episodeRe, thuong la du.",
+    "Kiem tra trong Console: document.querySelectorAll('...').length"
+  ],
+
+  "episodeRe": "",
+  "_episodeRe": [
+    "Regex nhan mot dong co phai ten tap khong, khop tu dau chuoi.",
+    "De trong = dung mac dinh, nhan duoc: E1.  Ep 2 -  Episode 3:  Tap 4.  EP-36",
+    "Chi sua neu trang danh so kieu khac han, vd 'Phan 1 / 12'."
+  ],
+
+  "seriesTitleSelector": "",
+  "_seriesTitleSelector": "Noi chua ten tac pham. De trong = thu aria-label roi den h1.",
+
+  "playSelector": "",
+  "_playSelector": "Nut Play. De trong = tu goi .play() tren the <video>.",
+
+  "waitMs": 0,
+  "_waitMs": "Cho toi da bao lau moi tap (ms). 0 = dung mac dinh 25000.",
+
+  "stopAfterFails": 0,
+  "_stopAfterFails": [
+    "May tap lien tiep khong phat duoc thi coi la het phan mien phi va dung.",
+    "0 = dung mac dinh 3. Dat rat lon neu trang khong co noi dung tra phi."
+  ],
+
+  "notes": ""
+}

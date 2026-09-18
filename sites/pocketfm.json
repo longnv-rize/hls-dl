@@ -1,0 +1,30 @@
+{
+  "match": ["pocketfm.com"],
+
+  "_kiem_chung": [
+    "Nhung dieu duoi day da quan sat truc tiep tren trang, khong phai suy doan:",
+    "  - Muc luc tap ghi 'E1. Ten tap', nam trong <span> khong co class de bam,",
+    "    nen auto-nhan-dang bang mau chu chay dung -> khong can episodeSelector.",
+    "  - Header lai ghi 'Ep 1 - Ten tap', tuc trang dung LAN hai kieu danh so.",
+    "    Bo loc nhom-dong-nhat da xu ly, khong can khai bao gi them.",
+    "  - <h1> chua CA ten tac pham lan ten tap, co cho viet 'EP-36' co gach noi.",
+    "    Ham cat ten tap da nhan duoc dang nay.",
+    "  - Muc luc tai dan khi cuon; mot bo co the hon 1000 tap.",
+    "  - Stream khong ma hoa, khong DRM ('Key system access true' trong log chi",
+    "    la tham do EME, khong phai dau hieu co DRM).",
+    "  - Moi tap sinh ra mot master playlist va vai playlist con cung thu muc.",
+    "",
+    "Chua kiem chung: cac truong duoi day de trong vi auto-nhan-dang da du.",
+    "Neu ban chay va thay sai o dau, dien selector cu the vao day."
+  ],
+
+  "episodeSelector": "",
+  "episodeRe": "",
+  "seriesTitleSelector": "",
+  "playSelector": "",
+
+  "waitMs": 25000,
+  "stopAfterFails": 3,
+
+  "notes": "Co phan mien phi o dau bo, phan sau tra phi. Tap tra phi khong phat duoc nen khong sinh link - auto_grab.js se tu dung o ranh gioi do."
+}

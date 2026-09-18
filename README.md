@@ -94,6 +94,28 @@ D:/Videos/My Vampire System/001 - E1. Just an Old Book.mp4
 D:/Videos/My Vampire System/002 - E2. The Awakening.mp4
 ```
 
+## Hồ sơ theo trang: [sites/](sites/)
+
+Phần DOM của mỗi trang mỗi khác, phần còn lại thì giống nhau. Thay vì nhồi hết vào một bộ heuristic cố gắng đúng cho mọi nơi, mỗi trang một file JSON trong [sites/](sites/). **Thêm trang mới = thêm một file, không đụng code.**
+
+```json
+{
+  "match": ["vidu.com"],
+  "episodeSelector": ".muc-luc a.tap",
+  "playSelector": ".nut-play"
+}
+```
+
+Chép [sites/_mau.json](sites/_mau.json) (có chú thích từng trường) rồi sửa. File bắt đầu bằng `_` bị bỏ qua.
+
+**Chỉ điền những trường mà auto-nhận-dạng làm sai.** Phần lớn trang không cần gì ngoài `match` — [sites/pocketfm.json](sites/pocketfm.json) là một ví dụ: mọi selector để trống vì tự nhận dạng đã đủ, file chỉ ghi lại những gì đã quan sát được trên trang.
+
+`match` khớp cả tên miền phụ (`site.com` khớp luôn `www.site.com`). Nhiều hồ sơ cùng khớp thì lấy cái **cụ thể nhất**, nên hồ sơ riêng cho `vn.site.com` thắng hồ sơ chung cho `site.com`.
+
+Thứ tự ưu tiên: **`.env` > hồ sơ trang > mặc định trong code**. Bạn đặt gì trong `.env` thì cái đó thắng.
+
+File JSON hỏng hoặc thiếu `match` thì bị bỏ qua kèm cảnh báo, không làm chết cả lần chạy.
+
 ## Cách 1 — tự động (khuyến nghị nếu nhiều tập)
 
 ```bash
@@ -210,6 +232,7 @@ Dữ liệu test lấy từ các lần chạy thật, không bịa ra, nên nó 
 | `test_verify.py` | ngưỡng cảnh báo và ngưỡng báo lỗi khi file ghép ra không khớp thời lượng |
 | `test_playlist.py` | chọn variant bitrate cao nhất, AES-128, fMP4, byte-range, `METHOD=NONE` giữa chừng |
 | `test_naming.py` | ký tự cấm trên Windows, tên dành riêng (`CON`, `NUL`), phát hiện thiếu mảnh |
+| `test_sites.js` | khớp tên miền, hồ sơ cụ thể thắng hồ sơ chung, thứ tự ưu tiên, file hỏng bị bỏ qua |
 | `test_no_secrets.py` | không để giá trị riêng tư lọt vào file được commit |
 
 Cái cuối có lý do cụ thể: trong lúc phát triển, một lệnh `cp .env .env.example` đã chép cả ID thư mục Google Drive thật vào file nằm trong repo. Lần đó phát hiện kịp bằng mắt. Test này để lần sau không phải trông vào may mắn.

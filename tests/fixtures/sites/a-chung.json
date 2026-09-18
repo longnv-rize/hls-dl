@@ -1,0 +1,1 @@
+{ "match": "site.com", "playSelector": ".chung", "waitMs": 111 }

@@ -57,29 +57,46 @@ function loadEnv(file) {
   return out;
 }
 
+const { loadProfiles, pickProfile, resolve } = require('./sites');
+
+// Giua chu va so co the la khoang trang, gach noi hoac dau cham: "EP 2",
+// "EP-36", "E.7", "E36". Chi nhan khoang trang thi "EP-36" bi truot.
+const EP_RE_MAC_DINH =
+  '^(E|Ep|Episode|Tap|Tập|Chuong|Chương|Chapter|Phan|Phần)[\\s\\-\\u2013.]*\\d+\\s*[.:)\\-\\u2013]';
+
 const envFile = path.resolve(process.argv[2] || path.join(__dirname, '.env'));
 const FILE_ENV = loadEnv(envFile);
 const env = (k, d) => process.env[k] || FILE_ENV[k] || d;
 const envInt = (k, d) => (parseInt(env(k, ''), 10) || d);
 
+const showUrls = env('SHOW_URL', env('COURSE_URL', ''))
+  .split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+
+// Ho so cua trang: chi dien nhung gi auto-nhan-dang lam sai. Xem sites/_mau.json
+const profiles = loadProfiles(path.join(__dirname, 'sites'));
+const prof = showUrls.length ? pickProfile(profiles, showUrls[0]) : null;
+
+// Thu tu uu tien: .env > ho so trang > mac dinh trong code
+const pick = (envKey, profKey, macDinh) =>
+  resolve(env(envKey, ''), prof && prof[profKey], macDinh);
+const pickInt = (envKey, profKey, macDinh) =>
+  resolve(envInt(envKey, 0), prof && parseInt(prof[profKey], 10), macDinh);
+
 const cfg = {
-  showUrls: env('SHOW_URL', env('COURSE_URL', '')).split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
-  episodeSelector: env('EPISODE_SELECTOR', ''),
-  // Giua chu va so co the la khoang trang, gach noi hoac dau cham: "EP 2",
-  // "EP-36", "E.7", "E36". Chi nhan khoang trang thi "EP-36" bi truot.
-  episodeRe: env('EPISODE_TITLE_RE',
-    '^(E|Ep|Episode|Tap|Tập|Chuong|Chương|Chapter|Phan|Phần)[\\s\\-\\u2013.]*\\d+\\s*[.:)\\-\\u2013]'),
-  seriesSelector: env('SERIES_TITLE_SELECTOR', ''),
-  playSelector: env('PLAY_SELECTOR', ''),
+  showUrls,
+  episodeSelector: pick('EPISODE_SELECTOR', 'episodeSelector', ''),
+  episodeRe: pick('EPISODE_TITLE_RE', 'episodeRe', EP_RE_MAC_DINH),
+  seriesSelector: pick('SERIES_TITLE_SELECTOR', 'seriesTitleSelector', ''),
+  playSelector: pick('PLAY_SELECTOR', 'playSelector', ''),
   profileDir: env('BROWSER_PROFILE', './browser-profile'),
   output: env('MANIFEST', './manifest.json'),
   headless: String(env('HEADLESS', 'false')).toLowerCase() === 'true',
-  waitMs: envInt('WAIT_MS', 25000),
+  waitMs: pickInt('WAIT_MS', 'waitMs', 25000),
   settleMs: envInt('SETTLE_MS', 1200),
   from: envInt('FROM_EP', 0),
   to: envInt('TO_EP', 0),
   maxEp: envInt('MAX_EP', 100),
-  stopAfterFails: envInt('STOP_AFTER_FAILS', 3),
+  stopAfterFails: pickInt('STOP_AFTER_FAILS', 'stopAfterFails', 3),
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -227,6 +244,15 @@ async function startPlayback(page) {
 
 (async () => {
   console.log(`Doc cau hinh: ${envFile}`);
+  if (prof) {
+    const dien = ['episodeSelector', 'episodeRe', 'seriesTitleSelector', 'playSelector']
+      .filter((k) => prof[k]);
+    console.log(`Ho so trang: sites/${prof.file}`
+      + (dien.length ? ` (dat: ${dien.join(', ')})` : ' (chi dung mac dinh)'));
+  } else if (showUrls.length) {
+    console.log('Ho so trang: khong co - dung auto-nhan-dang.'
+      + ' Sai o dau thi chep sites/_mau.json thanh ho so rieng.');
+  }
   if (!cfg.showUrls.length) {
     console.error('\nThieu SHOW_URL trong .env. Vi du:');
     console.error('  SHOW_URL=https://pocketfm.com/show/<ma-show>');
