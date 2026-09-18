@@ -94,6 +94,24 @@ D:/Videos/My Vampire System/001 - E1. Just an Old Book.mp4
 D:/Videos/My Vampire System/002 - E2. The Awakening.mp4
 ```
 
+## Động cơ tải: [.env](.env) → `ENGINE`
+
+Mặc định dùng bộ tải viết trong [hls_dl.py](hls_dl.py). Đặt `ENGINE=yt-dlp` thì giao việc tải cho **yt-dlp** — khoảng 1800 trang, có người bảo trì — nhưng **vẫn giữ phần đặt tên theo tên tập** và sổ ghi của công cụ này. Đó mới là chỗ công cụ này làm khác: yt-dlp đặt tên theo metadata của server, không đọc tên tập trong DOM.
+
+```ini
+ENGINE=yt-dlp
+```
+
+```bash
+pip install yt-dlp
+```
+
+Không cần `YTDLP_PATH`: nó thử lệnh `yt-dlp` trước, không có thì gọi qua `python -m yt_dlp` — cài bằng pip trên Windows rất hay rơi vào cảnh thư mục `Scripts` không nằm trong PATH.
+
+**Trước khi viết code cho một trang mới, thử `yt-dlp <url>` xem đã hỗ trợ sẵn chưa.** Cái đuôi dài của "mọi trang web" đã có người gánh rồi.
+
+Header lấy thẳng từ session nên `Referer`/`Cookie` giống hệt lúc tải bằng bộ sẵn có — nhiều CDN chặn nếu thiếu `Referer`.
+
 ## Hồ sơ theo trang: [sites/](sites/)
 
 Phần DOM của mỗi trang mỗi khác, phần còn lại thì giống nhau. Thay vì nhồi hết vào một bộ heuristic cố gắng đúng cho mọi nơi, mỗi trang một file JSON trong [sites/](sites/). **Thêm trang mới = thêm một file, không đụng code.**
@@ -217,7 +235,7 @@ Tự cảnh báo và dừng nếu số thứ tự đứt quãng (thiếu mảnh 
 ## Chạy test
 
 ```bash
-python -m unittest discover -s tests    # 64 test
+python -m unittest discover -s tests    # 79 test
 node tests/test_grab_js.js              # 27 assertion
 ```
 
@@ -233,6 +251,7 @@ Dữ liệu test lấy từ các lần chạy thật, không bịa ra, nên nó 
 | `test_playlist.py` | chọn variant bitrate cao nhất, AES-128, fMP4, byte-range, `METHOD=NONE` giữa chừng |
 | `test_naming.py` | ký tự cấm trên Windows, tên dành riêng (`CON`, `NUL`), phát hiện thiếu mảnh |
 | `test_sites.js` | khớp tên miền, hồ sơ cụ thể thắng hồ sơ chung, thứ tự ưu tiên, file hỏng bị bỏ qua |
+| `test_engine.py` | dựng lệnh yt-dlp: ép đúng đường dẫn, nhân đôi `%`, ánh xạ Referer/UA, làm im log |
 | `test_no_secrets.py` | không để giá trị riêng tư lọt vào file được commit |
 
 Cái cuối có lý do cụ thể: trong lúc phát triển, một lệnh `cp .env .env.example` đã chép cả ID thư mục Google Drive thật vào file nằm trong repo. Lần đó phát hiện kịp bằng mắt. Test này để lần sau không phải trông vào may mắn.

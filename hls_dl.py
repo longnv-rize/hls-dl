@@ -576,11 +576,90 @@ def verify(target, mong_doi):
     return None
 
 
+def dung_ytdlp():
+    return env("ENGINE", "").strip().lower().replace("_", "-") == "yt-dlp"
+
+
+def lenh_ytdlp():
+    """Cach goi yt-dlp tren may nay.
+
+    Cai bang pip tren Windows rat hay roi vao canh: module co day du nhung
+    thu muc Scripts khong nam trong PATH, nen lenh 'yt-dlp' khong goi duoc.
+    Luc do van con duong goi qua module bang chinh Python dang chay.
+    """
+    dat = env("YTDLP_PATH")
+    if dat:
+        return [dat]
+    if shutil.which("yt-dlp"):
+        return ["yt-dlp"]
+    return [sys.executable, "-m", "yt_dlp"]
+
+
+def cmd_ytdlp(url, target, sess, workers):
+    """Dung lenh yt-dlp. Tach rieng khoi viec chay de con test duoc.
+
+    --quiet --no-progress: yt-dlp mac dinh in tien trinh theo tung phan tram,
+    chay 59 tap thi log dai hang nghin dong va nuot mat cac dong quan trong.
+    Loi van in ra stderr nhu thuong.
+    """
+    cmd = lenh_ytdlp() + [
+        "--no-playlist", "--no-warnings", "--quiet", "--no-progress",
+        "--concurrent-fragments", str(workers),
+        "--merge-output-format", "mp4",
+        # trong -o thi % la ky tu dac biet, nhan doi de giu nguyen ten file
+        "-o", target.replace("%", "%%"),
+    ]
+    for k, v in (sess.headers or {}).items():
+        if k.lower() == "referer":
+            cmd += ["--referer", v]
+        elif k.lower() == "user-agent":
+            cmd += ["--user-agent", v]
+        elif k.lower() != "accept":
+            cmd += ["--add-header", f"{k}:{v}"]
+    cmd.append(url)
+    return cmd
+
+
+def run_ytdlp(url, target, sess, workers):
+    """Giao viec tai cho yt-dlp, nhung van giu phan dat ten cua minh.
+
+    yt-dlp ho tro khoang 1800 trang va co nguoi bao tri; khong viec gi phai
+    dung lai no. Thu no lam do la doc metadata cua server de dat ten, nen ta
+    ep -o thanh duong dan da tinh san tu ten tap doc duoc trong DOM.
+
+    Header lay thang tu session, de Referer/Cookie giong het luc tai bang
+    bo tai san co - nhieu CDN chan neu thieu Referer.
+    """
+    cmd = cmd_ytdlp(url, target, sess, workers)
+    try:
+        ma = subprocess.run(cmd).returncode
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"khong chay duoc '{exe}' - cai bang: pip install yt-dlp"
+            " (hoac dat ENGINE= de dung bo tai san co)") from None
+    if ma != 0:
+        raise RuntimeError(f"yt-dlp tra ve ma loi {ma}")
+    if not os.path.exists(target) or os.path.getsize(target) == 0:
+        raise RuntimeError("yt-dlp bao xong nhung khong thay file dich")
+    return target
+
+
 def download(url, target, sess, workers=8, retries=5, keep=False):
     if os.path.exists(target) and os.path.getsize(target) > 0:
         print(f"  bo qua (da co): {os.path.basename(target)}")
         return target
     os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
+
+    if dung_ytdlp():
+        run_ytdlp(url, target, sess, workers)
+        # Khong doc playlist nen khong biet phim dai bao nhieu de doi chieu;
+        # kiem duoc muc "file co mo ra duoc khong" la het.
+        if probe_duration(target) is None:
+            os.remove(target)
+            raise RuntimeError("yt-dlp cho ra file ma ffprobe khong doc duoc")
+        print(f"  -> {os.path.basename(target)} "
+              f"({os.path.getsize(target) / 1048576:.1f} MB) [yt-dlp]")
+        return target
 
     pl = parse_source(sess, url)
     work = os.path.join(tempfile.gettempdir(), "hls-dl",
