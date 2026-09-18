@@ -275,6 +275,54 @@ async function manDangNhap(page) {
 
 const laManDangNhap = (tt) => !!(tt && (tt.matKhau || tt.dauHieuUrl));
 
+/**
+ * Trang co dang bi captcha chan khong.
+ *
+ * Chi NHAN RA, khong tim cach di vong. Captcha hoi "co nguoi that o day
+ * khong" - cau tra loi dung la co, mot lan, roi phien duoc luu lai va cac
+ * lan sau khong gap nua. Gia tri nam o cho goi dung ten chuong ngai, chu
+ * khong phai o cho vuot qua no: bao nham thanh loi khac se khien ban di
+ * sua selector hoac doi mang trong khi viec can lam chi la ngoi giai mot
+ * lan trong cua so trinh duyet.
+ */
+async function coCaptcha(page) {
+  return page.evaluate(() => {
+    const dauHieu = [
+      'iframe[src*="recaptcha"]', 'iframe[src*="hcaptcha"]',
+      'iframe[src*="turnstile"]', 'iframe[src*="arkoselabs"]',
+      '.g-recaptcha', '.h-captcha', '.cf-turnstile', '#challenge-form',
+    ];
+    const thay = dauHieu.find((s) => document.querySelector(s));
+    // Cloudflare chen mot trang cho co tieu de dac trung
+    const trangCho = /just a moment|checking your browser|attention required/i
+      .test(document.title || '');
+    if (!thay && !trangCho) return null;
+    return { dau: thay || `tieu de "${document.title}"`, url: location.href };
+  }).catch(() => null);
+}
+
+/**
+ * Gap captcha thi lam gi. Tra ve 'tiep' neu da giai xong, 'dung' neu khong
+ * giai duoc trong moi truong hien tai, null neu khong co captcha.
+ */
+async function xuLyCaptcha(page, nhan) {
+  const c = await coCaptcha(page);
+  if (!c) return null;
+
+  console.error(`\n${nhan} TRANG DANG BI CAPTCHA CHAN`);
+  console.error(`  dau hieu: ${c.dau}`);
+  console.error(`  dang o  : ${c.url}`);
+
+  if (cfg.headless || !process.stdin.isTTY) {
+    console.error('  Dang chay an (hoac khong co terminal) nen khong ai giai duoc.');
+    console.error('  Dat HEADLESS=false va bo NO_LOGIN_PAUSE, chay lai, tu giai mot lan');
+    console.error('  - phien se duoc luu vao BROWSER_PROFILE va cac lan sau khong gap nua.');
+    return 'dung';
+  }
+  await ask('  >>> Giai captcha trong cua so trinh duyet roi bam Enter de chay tiep... ');
+  return 'tiep';
+}
+
 /** Bam Play: uu tien PLAY_SELECTOR, khong thi goi .play() tren <video>. */
 async function startPlayback(page) {
   if (cfg.playSelector) {
@@ -326,6 +374,14 @@ async function startPlayback(page) {
   });
 
   await page.goto(cfg.showUrls[0], { waitUntil: 'domcontentloaded' });
+  await sleep(1500);   // cho captcha kip chen vao neu co
+
+  // Kiem captcha TRUOC buoc cho dang nhap: gap captcha ma van in "dang nhap
+  // xong thi bam Enter" la chi sai viec can lam.
+  if (await xuLyCaptcha(page, 'Trang tac pham') === 'dung') {
+    await ctx.close();
+    process.exit(3);
+  }
   await ask('\n>>> Dang nhap xong (neu can) thi bam Enter de bat dau... ');
 
   // Doc manifest cu neu co, de chay lai la TIEP TUC chu khong lam lai tu dau.
@@ -362,6 +418,10 @@ async function startPlayback(page) {
       // Truoc khi do loi cho selector, xem co phai trang dang doi dang nhap
       // khong. Bao "khong nhan ra tap nao" trong truong hop do la chi sai
       // huong: nguoi dung se di sua selector trong khi van de la chua dang nhap.
+      if (await xuLyCaptcha(page, series || showUrl) === 'dung') {
+        hong.push({ title: showUrl });
+        continue;
+      }
       const tt = await manDangNhap(page);
       if (laManDangNhap(tt)) {
         console.error(`\n${series || showUrl}: trang dang DOI DANG NHAP`);
@@ -391,6 +451,7 @@ async function startPlayback(page) {
     console.log(`\n=== ${series} - lay ${eps.length} tap (E${eps[0].num} -> E${eps[eps.length - 1].num}) ===`);
 
     let loiLienTiep = 0;
+    const daThuLai = new Set();   // tap da thu lai sau khi giai captcha
     for (let i = 0; i < eps.length; i++) {
       const ep = eps[i];
       const nhan = `[${i + 1}/${eps.length}]`;
@@ -422,6 +483,18 @@ async function startPlayback(page) {
           // tach ra: neu khong tach, phien rung giua chung se bi bao nham thanh
           // "het phan mien phi" - mot ket luan sai ma nghe rat co ly, khien ban
           // tin la da lay xong trong khi con nguyen nua sau.
+          // Captcha xen vao giua chung cung lam tap khong phat duoc, va cung
+          // se bi dem nham vao nguong "het phan mien phi" neu khong tach ra.
+          const cap = await xuLyCaptcha(page, nhan);
+          if (cap === 'dung') { hetPhien = true; break; }
+          // Giai xong thi thu lai tap nay - nhung CHI mot lan. Khong chan thi
+          // captcha hien lai lien tuc se thanh vong lap vo tan.
+          if (cap === 'tiep' && !daThuLai.has(ep.num)) {
+            daThuLai.add(ep.num);
+            i -= 1;
+            continue;
+          }
+
           const tt = await manDangNhap(page);
           if (laManDangNhap(tt)) {
             console.error(`\n${nhan} PHIEN DANG NHAP DA HET HAN giua chung`);

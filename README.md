@@ -57,6 +57,9 @@ OUTPUT_DIR=D:/Videos
 | Tải | `OUTPUT_DIR` `MANIFEST` `WORKERS` `RETRIES` | thư mục lưu, file manifest, số luồng, số lần thử lại |
 | | `MAX_PATH_LEN` | độ dài tối đa cả đường dẫn; mặc định 250 trên Windows |
 | Playwright | `BROWSER_PROFILE` `HEADLESS` `WAIT_MS` `SETTLE_MS` | phiên đăng nhập, chạy ẩn, thời gian chờ |
+| | `NO_LOGIN_PAUSE` | bỏ bước dừng chờ đăng nhập (dùng khi phiên đã lưu sẵn) |
+
+**Mã thoát:** `0` xong, `1` lỗi cấu hình, `2` phiên hết hạn giữa chừng, `3` bị captcha chặn.
 
 Thứ tự ưu tiên: **dòng lệnh > biến môi trường > `.env` > mặc định**.
 
@@ -152,6 +155,8 @@ Lần đầu trình duyệt dừng lại cho bạn **đăng nhập bằng tay**,
 Chạy từ script hoặc CI (không có terminal để bấm Enter) thì nó tự bỏ qua bước dừng, hoặc đặt `NO_LOGIN_PAUSE=true` để bỏ qua kể cả khi có terminal.
 
 **Trang bắt đăng nhập ngay từ đầu** thì nó nhận ra và nói thẳng, thay vì báo "không nhận ra tập nào" khiến bạn đi sửa nhầm selector. Cách xử lý vẫn là làm một lần: `HEADLESS=false`, đăng nhập bằng tay, bấm Enter — rồi đặt lại `HEADLESS=true` cho mọi lần sau.
+
+**Captcha** thì nó nhận ra và **dừng lại chờ bạn tự giải** (nếu đang chạy có cửa sổ), rồi thử lại tập đó. Chạy ẩn thì nó thoát mã 3 và bảo bạn chạy lại ở chế độ có cửa sổ. Công cụ không đi vòng qua captcha — captcha hỏi "có người thật không", và câu trả lời đúng là có, **một lần**, rồi phiên được lưu lại.
 
 **Phiên hết hạn giữa chừng** thì nó nhận ra và dừng với thông báo riêng, thoát mã 2. Quan trọng vì nếu không tách ra, phiên rụng sẽ bị báo nhầm thành *"hết phần miễn phí"* — một kết luận sai nghe rất có lý, khiến bạn tin là đã lấy xong.
 
