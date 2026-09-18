@@ -169,11 +169,35 @@ Cuối cùng nó in ra khoảng thật sự lấy được, ví dụ `Xong: 38 t
 
 Muốn bấm tay từng tập cũng được: tên tập gắn theo **cú click của bạn**, chính xác hơn mọi cách đoán "tập nào đang active".
 
+### Sợ nó bấm nhầm tập?
+
+Rủi ro có thật: **chữ và nút bấm không nhất thiết nằm cùng một thẻ**. Công cụ đi ngược từ thẻ chứa tên tập lên tìm thẻ bấm được gần nhất, và thẻ đó có thể rộng hơn một tập.
+
+Ba lớp chặn:
+
+**1. Từ chối thẻ quá rộng.** Nếu thẻ bấm được gần nhất ôm từ hai tên tập trở lên thì nó quá thô — bấm vào đó không biết trúng tập nào — nên quay về bấm chính thẻ chứa tên tập.
+
+**2. Xem trước bằng mắt, trước khi nó bấm gì.**
+
+```js
+HLS.probeClicks({ to: true })
+```
+
+In ra bảng từng tập sẽ bấm vào thẻ nào, kích thước bao nhiêu, kèm cảnh báo nếu thẻ gần như không có kích thước hoặc không phải thẻ bấm được rõ ràng. Với `to: true` nó **tô viền lên trang**: xanh là ổn, cam là đáng ngờ. Nó cũng đếm xem số thẻ khác nhau có bằng số tập không — bằng nhau nghĩa là không có hai tập trỏ chung một thẻ.
+
+Gọi lại không kèm tham số để xoá viền.
+
+**3. Đối chiếu sau khi bấm.** `auto_grab.js` đọc lại tiêu đề trang xem có đúng tập vừa bấm không. Lệch thì báo `BAM NHAM` và **không ghi vào manifest** — thà thiếu một tập còn hơn ghi nhầm link mà không ai biết.
+
+Lớp 3 quan trọng nhất, vì nó biến "có thể bấm nhầm" từ lỗi âm thầm thành lỗi có báo.
+
+
 | Lệnh | Việc |
 |---|---|
 | `await HLS.auto({tu, den})` | tự bấm các tập trong khoảng (nên dùng) |
 | `await HLS.loadAll({den})` | chỉ cuộn tới tập `den`, đếm số tập |
 | `HLS.probe()` | xem script đọc ra tên tác phẩm / tên tập nào |
+| `HLS.probeClicks({to:true})` | xem trước nó sẽ bấm vào thẻ nào, tô viền lên trang |
 | `HLS.list()` | bảng những gì đã bắt được |
 | `HLS.rename(3, 'E3. The Cave')` | sửa tên bắt sai |
 | `HLS.setSeries('My Vampire System')` | đặt lại tên tác phẩm cho tất cả |

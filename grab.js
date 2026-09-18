@@ -371,10 +371,33 @@
     return [...set];
   };
 
-  /** The bam duoc ung voi mot ten tap. Phai tim lai moi lan vi trang ve lai DOM. */
+  /**
+   * The se bam cho mot ten tap. Phai tim lai moi lan vi trang ve lai DOM.
+   *
+   * Di nguoc len tim the bam duoc gan nhat. NHUNG neu the do om tu hai ten tap
+   * tro len thi no qua rong - bam vao do khong biet se trung tap nao - luc do
+   * quay ve bam chinh the chua ten tap.
+   *
+   * Day la cho de bam nham nhat: chu va nut bam khong nhat thiet nam cung mot
+   * the. Go HLS.probeClicks() de xem truoc no dinh bam vao dau.
+   */
   const clickableFor = (title) => {
     const el = episodeNodes().find((n) => txt(n) === title);
-    return el ? (el.closest('a, button, [role="button"], li') || el) : null;
+    if (!el) return null;
+    const rong = el.closest('a, button, [role="button"], li');
+    if (!rong || rong === el) return el;
+    const soTapBenTrong = [...rong.querySelectorAll(LEAF_SEL)]
+      .filter(isLeaf)
+      .filter((x) => EPISODE_RE.test(txt(x))).length;
+    return soTapBenTrong > 1 ? el : rong;
+  };
+
+  /** Mo ta ngan gon mot the, de doc trong bang chan doan. */
+  const taThe = (el) => {
+    if (!el) return '(khong co)';
+    const cls = (typeof el.className === 'string' && el.className.trim())
+      ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+    return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + cls;
   };
 
   // --- lenh cho ban ----------------------------------------------------------
@@ -422,6 +445,57 @@
           + 'Copy link address -> HLS.add("<url>")', 'color:#f60');
       }
       return nodes;
+    },
+
+    /**
+     * Xem TRUOC no dinh bam vao the nao, khong bam gi ca.
+     * Chay cai nay truoc HLS.auto() de tu mat kiem tra, thay vi tin.
+     *
+     *   HLS.probeClicks()              chi in bang
+     *   HLS.probeClicks({ to: true })  to vien mau len trang de nhin thay
+     */
+    probeClicks({ to = false } = {}) {
+      document.querySelectorAll('[data-hlsdl-to]').forEach((el) => {
+        el.style.outline = '';
+        el.removeAttribute('data-hlsdl-to');
+      });
+
+      const bang = episodeTitles().map((ten) => {
+        const el = clickableFor(ten);
+        if (!el) return { tap: ten, bam: '(khong tim thay)', canhBao: 'khong co the nao' };
+
+        const o = el.getBoundingClientRect();
+        const laNut = /^(a|button)$/i.test(el.tagName)
+          || el.getAttribute('role') === 'button'
+          || typeof el.onclick === 'function';
+        let canhBao = '';
+        if (o.width < 8 || o.height < 8) canhBao = 'the gan nhu khong co kich thuoc';
+        else if (!laNut) canhBao = 'khong phai the bam duoc ro rang';
+
+        if (to) {
+          el.style.outline = canhBao ? '3px solid #f60' : '2px solid #0c0';
+          el.setAttribute('data-hlsdl-to', '1');
+        }
+        return {
+          tap: ten,
+          bam: taThe(el),
+          href: el.href ? el.href.slice(-40) : '',
+          rong: Math.round(o.width),
+          cao: Math.round(o.height),
+          canhBao,
+        };
+      });
+
+      console.table(bang);
+      const ngo = bang.filter((r) => r.canhBao);
+      const rieng = new Set(bang.map((r) => r.bam + '|' + r.href)).size;
+      console.log(`${bang.length} tap -> ${rieng} the khac nhau`
+        + (rieng < bang.length ? '  <- CO THE TRUNG NHAU, xem ky' : '  (khong trung)'));
+      console.log(ngo.length
+        ? `${ngo.length} muc dang ngo - xem cot canhBao`
+        : 'Khong muc nao dang ngo');
+      if (to) console.log('Da to vien: xanh = on, cam = dang ngo. Go HLS.probeClicks() de xoa vien.');
+      return bang;
     },
 
     /**

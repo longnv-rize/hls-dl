@@ -166,9 +166,23 @@ async function tagEpisodes(page, selector, reSource) {
       const n = numIn(title);
       if (!title || n === null || seen.has(n)) return;
       seen.add(n);
-      const target = el.closest('a, button, [role="button"], li') || el;
+      // Cho bam phai la the CHI om mot ten tap. Neu the bam duoc gan nhat lai
+      // om nhieu tap thi no qua rong - bam vao do khong biet trung tap nao -
+      // luc do quay ve bam chinh the chua ten tap.
+      let target = el.closest('a, button, [role="button"], li') || el;
+      if (target !== el) {
+        const soTap = [...target.querySelectorAll(LEAF_SEL)]
+          .filter(isLeaf).filter((x) => re.test(txt(x))).length;
+        if (soTap > 1) target = el;
+      }
       target.setAttribute('data-hlsdl-ep', String(out.length));
-      out.push({ i: out.length, num: n, title, href: target.href || null });
+      const cls = (typeof target.className === 'string' && target.className.trim())
+        ? '.' + target.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+      out.push({
+        i: out.length, num: n, title,
+        href: target.href || null,
+        the: target.tagName.toLowerCase() + cls,
+      });
     });
     out.sort((a, b) => a.num - b.num);
     return out;
@@ -341,11 +355,28 @@ async function startPlayback(page) {
             break;
           }
         } else {
-          const url = moi[0];
-          daCoDir.add(dirOf(url));
-          out.push({ index: ep.num, series, title: ep.title, url, page: page.url() });
-          console.log(`${nhan} E${ep.num}. ${ep.title.replace(/^[^\s]*\s*/, '')}`.slice(0, 90));
-          loiLienTiep = 0;
+          // Kiem lai xem trang co that su chuyen sang dung tap vua bam khong.
+          // Chu va nut bam khong nhat thiet nam cung mot the, nen van co the
+          // bam trung tap khac - luc do link bat duoc la cua tap khac, va neu
+          // khong doi chieu thi khong gi phat hien ra.
+          const soTrenTrang = await page.evaluate(() => {
+            const m = String(document.title || '').match(
+              /\b(E|Ep|Episode|Tap|Tập|Chuong|Chương|Chapter)[\s\-–.]*(\d+)\b/i);
+            return m ? parseInt(m[2], 10) : null;
+          }).catch(() => null);
+
+          if (soTrenTrang !== null && soTrenTrang !== ep.num) {
+            console.warn(`${nhan} BAM NHAM: dinh lay E${ep.num} nhung trang dang o`
+              + ` E${soTrenTrang} (da bam vao ${ep.the}) - khong ghi vao manifest`);
+            hong.push(ep);
+            loiLienTiep += 1;
+          } else {
+            const url = moi[0];
+            daCoDir.add(dirOf(url));
+            out.push({ index: ep.num, series, title: ep.title, url, page: page.url() });
+            console.log(`${nhan} E${ep.num}. ${ep.title.replace(/^[^\s]*\s*/, '')}`.slice(0, 90));
+            loiLienTiep = 0;
+          }
         }
       } catch (err) {
         console.log(`${nhan} LOI: ${ep.title} - ${err.message}`);
