@@ -303,6 +303,50 @@ def merge(parts, init, target, workdir=None):
     os.remove(blob)
 
 
+def probe_duration(path):
+    """Doc thoi luong thuc te cua file bang ffprobe. None = khong doc duoc."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", path],
+            capture_output=True, text=True, timeout=60)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    try:
+        return float(r.stdout.strip())
+    except ValueError:
+        return None
+
+
+def verify(target, mong_doi):
+    """So thoi luong file vua ghep voi tong #EXTINF trong playlist.
+
+    Ly do can: mot lan tai co the 'thanh cong' theo moi dau hieu - exit code 0,
+    khong dong loi nao, log bao da ghi file - ma ket qua van sai. Playlist da
+    noi truoc phim dai bao nhieu, nen doi chieu lai la cach re nhat de loi khong
+    di qua trong im lang.
+
+    Tra ve chuoi canh bao neu lech vua phai, nem loi neu lech nghiem trong.
+    """
+    if not env_bool("VERIFY_OUTPUT", True) or not mong_doi:
+        return None
+    thuc = probe_duration(target)
+    if thuc is None:
+        raise RuntimeError("ffprobe khong doc duoc file vua ghep - file hong")
+
+    lech = abs(thuc - mong_doi)
+    nang = max(10.0, mong_doi * 0.05)
+    nhe = max(3.0, mong_doi * 0.01)
+    mota = (f"dai {thuc:.0f}s nhung playlist noi {mong_doi:.0f}s "
+            f"(lech {lech:.0f}s)")
+    if lech > nang:
+        raise RuntimeError(f"file ghep ra sai nhieu: {mota}")
+    if lech > nhe:
+        print(f"  ! canh bao: {mota}", file=sys.stderr)
+        return mota
+    return None
+
+
 def download(url, target, sess, workers=8, retries=5, keep=False):
     if os.path.exists(target) and os.path.getsize(target) > 0:
         print(f"  bo qua (da co): {os.path.basename(target)}")
@@ -342,9 +386,17 @@ def download(url, target, sess, workers=8, retries=5, keep=False):
         raise RuntimeError(f"{len(errors)}/{len(pl.segments)} manh loi - chay lai de resume")
 
     merge(parts, init_file, target, work)
+    try:
+        canh_bao = verify(target, pl.duration)
+    except Exception:
+        # giu lai manh de con chay lai duoc, va xoa file hong di
+        if os.path.exists(target):
+            os.remove(target)
+        raise
     if not keep:
         shutil.rmtree(work, ignore_errors=True)
-    print(f"  -> {os.path.basename(target)} ({os.path.getsize(target) / 1048576:.1f} MB)")
+    print(f"  -> {os.path.basename(target)} ({os.path.getsize(target) / 1048576:.1f} MB)"
+          + ("  [CO CANH BAO]" if canh_bao else ""))
     return target
 
 
@@ -492,9 +544,13 @@ def main():
                     mark_done(name)
             except Exception as exc:  # noqa: BLE001
                 print(f"  LOI: {exc}", file=sys.stderr)
-                failed.append(title)
+                # giu ca nguyen nhan - biet ten tap ma khong biet vi sao
+                # thi bao cao cuoi cung khong dung duoc vao viec gi
+                failed.append((title, str(exc)))
         if failed:
-            print(f"\n{len(failed)} video that bai:", *failed, sep="\n  - ")
+            print(f"\n{len(failed)} video that bai:")
+            for ten, vi_sao in failed:
+                print(f"  - {ten}\n      {vi_sao}")
             return 1
         print("\nXong tat ca.")
         return 0
@@ -502,8 +558,14 @@ def main():
     if not args.url:
         ap.error("can URL .m3u8 hoac --manifest")
     print(args.title or "video")
-    download(args.url, out_path(args.outdir, args.title or "video"),
-             sess, args.workers, args.retries, args.keep)
+    try:
+        download(args.url, out_path(args.outdir, args.title or "video"),
+                 sess, args.workers, args.retries, args.keep)
+    except Exception as exc:  # noqa: BLE001
+        # nem nguyen stack trace ra man hinh thi nguoi dung khong phan biet duoc
+        # day la loi that hay bug cua cong cu
+        print(f"\nLOI: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 

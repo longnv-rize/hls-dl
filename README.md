@@ -38,7 +38,7 @@ npm i playwright && npx playwright install chromium
 Tối thiểu cần điền một dòng:
 
 ```ini
-SHOW_URL=https://site.com/show/a2fa57d4cb8267b2645f2b588c39951fbf65093a
+SHOW_URL=https://site.com/show/<ma-show>
 OUTPUT_DIR=D:/Videos
 ```
 
@@ -191,6 +191,27 @@ Sắp xếp theo **số cuối cùng** trong tên file, nên phần hash ở đ�
 Tự cảnh báo và dừng nếu số thứ tự đứt quãng (thiếu mảnh 2, 3, 4 như trên), vì ghép thiếu mảnh sẽ ra video nhảy cóc. Thêm `--force` nếu vẫn muốn ghép.
 
 **Nếu tên mảnh là hash thuần không có số tăng dần** thì thứ tự không đoán được — phải lưu `.m3u8` gốc rồi dùng `--order playlist.m3u8`.
+
+## Chạy test
+
+```bash
+python -m unittest discover -s tests    # 42 test
+node tests/test_grab_js.js              # 27 assertion
+```
+
+Không cần cài thêm gì — dùng `unittest` của stdlib và `assert` của Node.
+
+Dữ liệu test lấy từ các lần chạy thật, không bịa ra, nên nó canh đúng những chỗ đã từng sai:
+
+| Test | Canh điều gì |
+|---|---|
+| `test_grab_js.js` | 22 mục thật trên trang phải lọc còn 20 tập; `EP-36` có gạch nối phải cắt đúng; mỗi tập chỉ giữ 1 master playlist |
+| `test_verify.py` | ngưỡng cảnh báo và ngưỡng báo lỗi khi file ghép ra không khớp thời lượng |
+| `test_playlist.py` | chọn variant bitrate cao nhất, AES-128, fMP4, byte-range, `METHOD=NONE` giữa chừng |
+| `test_naming.py` | ký tự cấm trên Windows, tên dành riêng (`CON`, `NUL`), phát hiện thiếu mảnh |
+| `test_no_secrets.py` | không để giá trị riêng tư lọt vào file được commit |
+
+Cái cuối có lý do cụ thể: trong lúc phát triển, một lệnh `cp .env .env.example` đã chép cả ID thư mục Google Drive thật vào file nằm trong repo. Lần đó phát hiện kịp bằng mắt. Test này để lần sau không phải trông vào may mắn.
 
 ## Đã có
 
