@@ -259,6 +259,22 @@ async function readSeries(page, selector) {
   }, selector);
 }
 
+/**
+ * Trang hien tai co phai man doi dang nhap khong.
+ * Dung o hai cho: luc khong tim thay tap nao, va luc mot tap khong phat duoc.
+ * Cho thu hai moi quan trong - do la luc phan biet "phien da rung" voi
+ * "tap nay tra phi", hai thu trong giong het nhau tu ben ngoai.
+ */
+async function manDangNhap(page) {
+  return page.evaluate(() => ({
+    url: location.href,
+    matKhau: !!document.querySelector('input[type="password"]'),
+    dauHieuUrl: /\/(log[-_]?in|sign[-_]?in|auth|account\/login)/i.test(location.href),
+  })).catch(() => null);
+}
+
+const laManDangNhap = (tt) => !!(tt && (tt.matKhau || tt.dauHieuUrl));
+
 /** Bam Play: uu tien PLAY_SELECTOR, khong thi goi .play() tren <video>. */
 async function startPlayback(page) {
   if (cfg.playSelector) {
@@ -312,9 +328,27 @@ async function startPlayback(page) {
   await page.goto(cfg.showUrls[0], { waitUntil: 'domcontentloaded' });
   await ask('\n>>> Dang nhap xong (neu can) thi bam Enter de bat dau... ');
 
-  const out = [];
+  // Doc manifest cu neu co, de chay lai la TIEP TUC chu khong lam lai tu dau.
+  // Quan trong khi phien rung giua chung: bao nguoi dung "chay lai di" ma moi
+  // lan chay lai deu bam lai tu tap 1 thi loi khuyen do vo nghia.
+  let out = [];
+  if (fs.existsSync(cfg.output)) {
+    try {
+      const cu = JSON.parse(fs.readFileSync(cfg.output, 'utf8'));
+      if (Array.isArray(cu) && cu.length) {
+        out = cu;
+        console.log(`Da co ${out.length} tap trong ${cfg.output} - se bo qua nhung tap do`);
+      }
+    } catch (e) {
+      console.warn(`Manifest cu khong doc duoc (${e.message}) - bat dau lai tu dau`);
+    }
+  }
+
   const hong = [];
   const daCoDir = new Set();  // thu muc da lay -> khong lay playlist con cua no
+  out.forEach((x) => { if (x.url) daCoDir.add(dirOf(x.url)); });
+  const daLay = new Set(out.map((x) => `${x.series}|${x.index}`));
+  let hetPhien = false;
 
   for (const showUrl of cfg.showUrls) {
     await page.goto(showUrl, { waitUntil: 'domcontentloaded' });
@@ -328,13 +362,8 @@ async function startPlayback(page) {
       // Truoc khi do loi cho selector, xem co phai trang dang doi dang nhap
       // khong. Bao "khong nhan ra tap nao" trong truong hop do la chi sai
       // huong: nguoi dung se di sua selector trong khi van de la chua dang nhap.
-      const tt = await page.evaluate(() => ({
-        url: location.href,
-        matKhau: !!document.querySelector('input[type="password"]'),
-        dauHieuUrl: /\/(log[-_]?in|sign[-_]?in|auth|account\/login)/i.test(location.href),
-      })).catch(() => null);
-
-      if (tt && (tt.matKhau || tt.dauHieuUrl)) {
+      const tt = await manDangNhap(page);
+      if (laManDangNhap(tt)) {
         console.error(`\n${series || showUrl}: trang dang DOI DANG NHAP`);
         console.error(`  dang o: ${tt.url}`);
         console.error('  Lam mot lan duy nhat nhu sau, cac lan sau tu dong:');
@@ -365,6 +394,11 @@ async function startPlayback(page) {
     for (let i = 0; i < eps.length; i++) {
       const ep = eps[i];
       const nhan = `[${i + 1}/${eps.length}]`;
+
+      if (daLay.has(`${series}|${ep.num}`)) {
+        console.log(`${nhan} bo qua (da co trong manifest): ${ep.title}`);
+        continue;
+      }
       hits = [];
 
       try {
@@ -384,6 +418,20 @@ async function startPlayback(page) {
         // thu muc. Master duoc goi TRUOC -> lay cai dau tien, bo phan con lai.
         const moi = hits.filter((u) => !daCoDir.has(dirOf(u)));
         if (!moi.length) {
+          // Phien rung va tap tra phi deu bieu hien la "khong phat duoc". Phai
+          // tach ra: neu khong tach, phien rung giua chung se bi bao nham thanh
+          // "het phan mien phi" - mot ket luan sai ma nghe rat co ly, khien ban
+          // tin la da lay xong trong khi con nguyen nua sau.
+          const tt = await manDangNhap(page);
+          if (laManDangNhap(tt)) {
+            console.error(`\n${nhan} PHIEN DANG NHAP DA HET HAN giua chung`);
+            console.error(`  dang o: ${tt.url}`);
+            console.error(`  ${out.length} tap lay duoc truoc do van duoc ghi vao manifest.`);
+            console.error('  Dang nhap lai (HEADLESS=false) roi chay lai - cac tap da co se duoc bo qua.');
+            hetPhien = true;
+            break;
+          }
+
           console.warn(`${nhan} khong phat duoc: ${ep.title} (nhieu kha nang la tap tra phi)`);
           hong.push(ep);
           loiLienTiep += 1;
@@ -444,6 +492,14 @@ async function startPlayback(page) {
   if (hong.length) {
     console.log(`${hong.length} tap khong lay duoc:`);
     hong.slice(0, 10).forEach((f) => console.log('  - ' + (f.title || f.text)));
+  }
+
+  if (hetPhien) {
+    // Dung noi "xong" khi no chua xong: danh sach tren day la doan lay duoc
+    // TRUOC khi phien rung, khong phai toan bo.
+    console.log('\nCHUA XONG - dung giua chung vi phien dang nhap het han.');
+    console.log('  Dang nhap lai roi chay lai lenh nay; no se tiep tu cho dang do.');
+    process.exit(2);
   }
   console.log('\nTiep theo:\n  python hls_dl.py');
 

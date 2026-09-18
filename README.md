@@ -153,6 +153,10 @@ Chạy từ script hoặc CI (không có terminal để bấm Enter) thì nó t�
 
 **Trang bắt đăng nhập ngay từ đầu** thì nó nhận ra và nói thẳng, thay vì báo "không nhận ra tập nào" khiến bạn đi sửa nhầm selector. Cách xử lý vẫn là làm một lần: `HEADLESS=false`, đăng nhập bằng tay, bấm Enter — rồi đặt lại `HEADLESS=true` cho mọi lần sau.
 
+**Phiên hết hạn giữa chừng** thì nó nhận ra và dừng với thông báo riêng, thoát mã 2. Quan trọng vì nếu không tách ra, phiên rụng sẽ bị báo nhầm thành *"hết phần miễn phí"* — một kết luận sai nghe rất có lý, khiến bạn tin là đã lấy xong.
+
+**Chạy lại là tiếp tục, không phải làm lại.** Nó đọc manifest cũ trước khi chạy và bỏ qua những tập đã có. Nhờ vậy lời khuyên "đăng nhập lại rồi chạy lại" mới có nghĩa.
+
 **Đã chạy thật** trên một trang công khai: cuộn tìm tập, bấm phát, bắt link, ghi manifest — ra đúng URL master playlist dùng được ngay.
 
 ## Cách 2 — thủ công (nhanh hơn nếu chỉ vài tập)
