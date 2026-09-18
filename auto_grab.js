@@ -1,21 +1,25 @@
 /* ============================================================================
- * auto_grab.js - tu dong duyet het cac tap cua mot tac pham, bat link, xuat manifest.
+ * auto_grab.js - dien SHOW_URL vao .env, chay mot lenh, ra manifest.json.
  *
- * Vi sao can trinh duyet that: link video khong nam trong HTML. No chi sinh ra
- * khi player chay JS va goi request. Nen phai cho trang chay that, bam Play that,
- * roi nghe o tang network - dung viec ma grab.js lam bang tay, nhung tu dong.
+ * Lam dung viec ma grab.js lam bang tay, nhung khong can ban ngoi bam:
+ * mo trinh duyet that, cuon cho muc luc hien ra, bam phat tung tap, nghe o
+ * tang network de bat link .m3u8 ngay khoanh khac player goi.
  *
- * Ten file lay tu TEN TAP ("E1. Just an Old Book"), thu muc lay tu ten tac pham.
+ * Vi sao phai lam vay: link video KHONG nam trong HTML. No chi sinh ra khi
+ * player chay JS va goi request.
  *
- * Cau hinh: sua file .env, khong sua file nay.
+ * Cau hinh: sua .env, khong sua file nay.
  *
  * Cai dat (mot lan):
  *     npm init -y && npm i playwright
  *     npx playwright install chromium
  *
  * Chay:
- *     node auto_grab.js              (doc .env canh script)
+ *     node auto_grab.js            (doc .env canh script)
  *     node auto_grab.js khac.env
+ *
+ * Lan dau trinh duyet dung lai cho ban DANG NHAP bang tay. Phien luu vao
+ * BROWSER_PROFILE nen lan sau khoi lam lai.
  * ==========================================================================*/
 const fs = require('fs');
 const path = require('path');
@@ -27,7 +31,7 @@ try {
   console.error('Chua cai Playwright. Chay 2 lenh nay trong thu muc hls-dl:\n');
   console.error('  npm init -y && npm i playwright');
   console.error('  npx playwright install chromium\n');
-  console.error('Hoac bo qua auto_grab.js va lam tay bang grab.js.');
+  console.error('Hoac bo qua file nay va lam tay bang grab.js.');
   process.exit(1);
 }
 
@@ -56,19 +60,26 @@ function loadEnv(file) {
 const envFile = path.resolve(process.argv[2] || path.join(__dirname, '.env'));
 const FILE_ENV = loadEnv(envFile);
 const env = (k, d) => process.env[k] || FILE_ENV[k] || d;
-const envInt = (k, d) => parseInt(env(k, d), 10) || d;
+const envInt = (k, d) => (parseInt(env(k, ''), 10) || d);
 
 const cfg = {
   showUrls: env('SHOW_URL', env('COURSE_URL', '')).split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
   episodeSelector: env('EPISODE_SELECTOR', ''),
-  episodeRe: env('EPISODE_TITLE_RE', '^(E|Ep|Episode|Tap|Tập|Chuong|Chương|Chapter)\\s*\\d+\\s*[.:)\\-\\u2013]'),
+  // Giua chu va so co the la khoang trang, gach noi hoac dau cham: "EP 2",
+  // "EP-36", "E.7", "E36". Chi nhan khoang trang thi "EP-36" bi truot.
+  episodeRe: env('EPISODE_TITLE_RE',
+    '^(E|Ep|Episode|Tap|Tập|Chuong|Chương|Chapter|Phan|Phần)[\\s\\-\\u2013.]*\\d+\\s*[.:)\\-\\u2013]'),
   seriesSelector: env('SERIES_TITLE_SELECTOR', ''),
   playSelector: env('PLAY_SELECTOR', ''),
   profileDir: env('BROWSER_PROFILE', './browser-profile'),
   output: env('MANIFEST', './manifest.json'),
   headless: String(env('HEADLESS', 'false')).toLowerCase() === 'true',
-  waitMs: envInt('WAIT_MS', 20000),
-  settleMs: envInt('SETTLE_MS', 1500),
+  waitMs: envInt('WAIT_MS', 25000),
+  settleMs: envInt('SETTLE_MS', 1200),
+  from: envInt('FROM_EP', 0),
+  to: envInt('TO_EP', 0),
+  maxEp: envInt('MAX_EP', 100),
+  stopAfterFails: envInt('STOP_AFTER_FAILS', 3),
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -79,9 +90,17 @@ const ask = (q) => new Promise((resolve) => {
   process.stdin.once('data', () => { process.stdin.pause(); resolve(); });
 });
 
+const numOf = (t) => {
+  const m = String(t).match(/^[^\s\d]*[\s\-–.]*(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+};
+
+/** Thu muc chua file - cac playlist cua CUNG mot tap nam chung mot thu muc. */
+const dirOf = (u) => u.split('?')[0].replace(/\/[^/]*$/, '/');
+
 /**
  * Danh dau cac tap tren trang bang data-hlsdl-ep roi tra ve danh sach.
- * Phai lam lai moi vong lap vi trang SPA co the ve lai DOM sau moi cu bam.
+ * Phai lam lai moi vong vi trang SPA co the ve lai DOM sau moi cu bam.
  */
 async function tagEpisodes(page, selector, reSource) {
   return page.evaluate(({ sel, reSrc }) => {
@@ -94,20 +113,19 @@ async function tagEpisodes(page, selector, reSource) {
     if (sel) {
       nodes = [...document.querySelectorAll(sel)];
     } else {
-      // Tu nhan dang: chi lay the LA. Text cua ca the card cung bat dau bang
-      // "E1." nhung keo theo "10:46", "4yr ago", "Play icon"...
+      // Chi lay the LA. Text cua ca the card cung bat dau bang "E1." nhung keo
+      // theo "10:46", "4yr ago", "Play icon"...
       nodes = [...document.querySelectorAll(LEAF_SEL)]
         .filter(isLeaf)
         .filter((el) => { const t = txt(el); return t.length < 150 && re.test(t); });
     }
 
-    // "E1. ..." -> "e|."   |   "Ep 1 - ..." -> "ep|-"
     const shapeOf = (t) => {
-      const m = t.match(/^([^\s\d]+)\s*\d+\s*([.:)\-–])/);
+      const m = t.match(/^([^\s\d]+)[\s\-–.]*\d+\s*([.:)\-–])/);
       return m ? m[1].toLowerCase() + '|' + m[2] : '?';
     };
-    const numOf = (t) => {
-      const m = t.match(/^[^\s\d]*\s*(\d+)/);
+    const numIn = (t) => {
+      const m = t.match(/^[^\s\d]*[\s\-–.]*(\d+)/);
       return m ? parseInt(m[1], 10) : null;
     };
 
@@ -125,13 +143,12 @@ async function tagEpisodes(page, selector, reSource) {
     }
 
     const out = [];
-    const seenNum = new Set();
+    const seen = new Set();
     nodes.forEach((el) => {
       const title = txt(el);
-      const n = numOf(title);
-      if (!title || n === null || seenNum.has(n)) return;
-      seenNum.add(n);
-      // cho bam la the <a>/<button> gan nhat, khong thi chinh no
+      const n = numIn(title);
+      if (!title || n === null || seen.has(n)) return;
+      seen.add(n);
       const target = el.closest('a, button, [role="button"], li') || el;
       target.setAttribute('data-hlsdl-ep', String(out.length));
       out.push({ i: out.length, num: n, title, href: target.href || null });
@@ -141,13 +158,42 @@ async function tagEpisodes(page, selector, reSource) {
   }, { sel: selector, reSrc: reSource });
 }
 
+/** Cuon cho muc luc hien het (hoac hien toi tap `den` thi dung). */
+async function loadAll(page, den) {
+  let truoc = -1;
+  let yen = 0;
+  let eps = [];
+  for (let i = 0; i < 400 && yen < 6; i++) {
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+      // muc luc co the nam trong mot khung cuon rieng, khong phai window
+      document.querySelectorAll('*').forEach((el) => {
+        const st = getComputedStyle(el);
+        if (/(auto|scroll)/.test(st.overflowY) && el.scrollHeight > el.clientHeight + 50) {
+          el.scrollTop = el.scrollHeight;
+        }
+      });
+    }).catch(() => {});
+    await sleep(1000);
+
+    eps = await tagEpisodes(page, cfg.episodeSelector, cfg.episodeRe);
+    if (den && eps.some((e) => e.num >= den)) {
+      console.log(`  ...${eps.length} tap - da thay tap ${den}, dung cuon`);
+      break;
+    }
+    if (eps.length === truoc) { yen += 1; } else { yen = 0; console.log(`  ...${eps.length} tap`); }
+    truoc = eps.length;
+  }
+  return eps;
+}
+
 async function readSeries(page, selector) {
   return page.evaluate((sel) => {
     const txt = (el) => (el && el.textContent ? el.textContent.trim().replace(/\s+/g, ' ') : '');
-    // <h1> thuong chua CA ten tac pham lan ten tap
-    // ("My Vampire System Ep 1 - Just an Old Book") -> phai cat phan ten tap di.
+    // <h1> thuong chua CA ten tac pham lan ten tap ("My Vampire System EP-36
+    // Escape") -> phai cat phan ten tap. Khong doi hoi dau cau ngay sau so.
     const strip = (s) => s.replace(
-      /\s*[-–|:]?\s*(E|Ep|Episode|Tap|Tập|Chuong|Chương|Chapter|Phan|Phần)\s*\d+\s*[.:)\-–].*$/i,
+      /\s*[-–|:]?\s*\b(E|Ep|Episode|Tap|Tập|Chuong|Chương|Chapter|Phan|Phần)[\s\-–.]*\d+\b.*$/i,
       '').trim();
 
     if (sel) {
@@ -182,8 +228,8 @@ async function startPlayback(page) {
 (async () => {
   console.log(`Doc cau hinh: ${envFile}`);
   if (!cfg.showUrls.length) {
-    console.error('\nThieu SHOW_URL trong .env - dien URL trang tac pham roi chay lai.');
-    console.error('Vi du: SHOW_URL=https://site.com/show/a2fa57d4cb8267b2645f2b588c39951fbf65093a');
+    console.error('\nThieu SHOW_URL trong .env. Vi du:');
+    console.error('  SHOW_URL=https://pocketfm.com/show/<ma-show>');
     process.exit(1);
   }
 
@@ -194,7 +240,7 @@ async function startPlayback(page) {
   });
   const page = ctx.pages()[0] || (await ctx.newPage());
 
-  // nghe network o cap context, luon bat duoc du trang co dieu huong hay khong
+  // Nghe o tang network: bat duoc moi request, ke ca cai fetch/XHR hook bo sot.
   let hits = [];
   page.on('request', (req) => {
     const url = req.url();
@@ -205,84 +251,103 @@ async function startPlayback(page) {
   await ask('\n>>> Dang nhap xong (neu can) thi bam Enter de bat dau... ');
 
   const out = [];
-  const failed = [];
+  const hong = [];
+  const daCoDir = new Set();  // thu muc da lay -> khong lay playlist con cua no
 
   for (const showUrl of cfg.showUrls) {
     await page.goto(showUrl, { waitUntil: 'domcontentloaded' });
     await sleep(2000);
 
-    // keo xuong cuoi de danh sach tap tai het (lazy load)
-    for (let s = 0; s < 8; s++) {
-      await page.mouse.wheel(0, 3000).catch(() => {});
-      await sleep(600);
-    }
-    await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {});
-    await sleep(500);
-
+    const eps0 = await loadAll(page, cfg.to);
     const series = await readSeries(page, cfg.seriesSelector);
-    let episodes = await tagEpisodes(page, cfg.episodeSelector, cfg.episodeRe);
-    console.log(`\n=== ${series} - ${episodes.length} tap ===`);
 
-    if (!episodes.length) {
-      console.error('Khong nhan ra tap nao. Kiem tra EPISODE_SELECTOR / EPISODE_TITLE_RE trong .env,');
-      console.error('hoac dung grab.js roi go HLS.probe() de xem trang cho ra nhung ten gi.');
-      failed.push({ text: showUrl });
+    let eps = eps0.filter((e) => (!cfg.from || e.num >= cfg.from) && (!cfg.to || e.num <= cfg.to));
+    if (!eps.length) {
+      console.error(`\n${series}: khong nhan ra tap nao.`);
+      console.error('Kiem tra EPISODE_SELECTOR / EPISODE_TITLE_RE trong .env, hoac dan grab.js');
+      console.error('vao Console roi go HLS.probe() de xem trang cho ra nhung ten gi.');
+      hong.push({ title: showUrl });
       continue;
     }
 
-    for (let i = 0; i < episodes.length; i++) {
-      const ep = episodes[i];
-      const label = `[${i + 1}/${episodes.length}]`;
+    // Bo dai co the hon 1000 tap. Khong gioi han thi chay vai tieng, tai hang tram GB.
+    if (eps.length > cfg.maxEp) {
+      console.error(`\n${series}: ${eps.length} tap - qua nhieu de chay mot lan.`);
+      console.error(`Dat khoang trong .env, vi du FROM_EP=1 va TO_EP=${cfg.maxEp},`);
+      console.error(`hoac nang MAX_EP neu that su muon lay het.`);
+      continue;
+    }
+
+    console.log(`\n=== ${series} - lay ${eps.length} tap (E${eps[0].num} -> E${eps[eps.length - 1].num}) ===`);
+
+    let loiLienTiep = 0;
+    for (let i = 0; i < eps.length; i++) {
+      const ep = eps[i];
+      const nhan = `[${i + 1}/${eps.length}]`;
       hits = [];
 
       try {
         if (ep.href) {
           await page.goto(ep.href, { waitUntil: 'domcontentloaded' });
         } else {
-          // SPA: bam thang vao tap, trang khong dieu huong
           await page.click(`[data-hlsdl-ep="${ep.i}"]`, { timeout: 8000 });
         }
         await sleep(1200);
         await startPlayback(page);
 
-        const deadline = Date.now() + cfg.waitMs;
-        while (!hits.length && Date.now() < deadline) await sleep(250);
-        await sleep(cfg.settleMs); // gom them playlist den muon
+        const het = Date.now() + cfg.waitMs;
+        while (!hits.length && Date.now() < het) await sleep(250);
+        await sleep(cfg.settleMs);
 
-        if (!hits.length) {
-          console.log(`${label} KHONG bat duoc link: ${ep.title}`);
-          failed.push(ep);
+        // Moi tap sinh ra master playlist + vai playlist con, tat ca cung mot
+        // thu muc. Master duoc goi TRUOC -> lay cai dau tien, bo phan con lai.
+        const moi = hits.filter((u) => !daCoDir.has(dirOf(u)));
+        if (!moi.length) {
+          console.warn(`${nhan} khong phat duoc: ${ep.title} (nhieu kha nang la tap tra phi)`);
+          hong.push(ep);
+          loiLienTiep += 1;
+          await page.keyboard.press('Escape').catch(() => {});
+          await sleep(400);
+          // Tap free nam lien nhau o dau. May tap lien tiep khong phat duoc
+          // = da qua ranh gioi tra phi -> dung, khoi doi vo ich.
+          if (loiLienTiep >= cfg.stopAfterFails) {
+            console.warn(`Dung: ${loiLienTiep} tap lien tiep khong phat duoc - het phan mien phi.`);
+            break;
+          }
         } else {
-          // nhieu hit -> lay cai dai nhat, thuong la master playlist co token day du
-          const url = [...hits].sort((a, b) => b.length - a.length)[0];
-          // dung so tap that (E7 -> 007) de neu co tap loi thi so thu tu van dung
-          out.push({ index: ep.num || i + 1, series, title: ep.title, url, page: page.url() });
-          console.log(`${label} ${ep.title}`);
+          const url = moi[0];
+          daCoDir.add(dirOf(url));
+          out.push({ index: ep.num, series, title: ep.title, url, page: page.url() });
+          console.log(`${nhan} E${ep.num}. ${ep.title.replace(/^[^\s]*\s*/, '')}`.slice(0, 90));
+          loiLienTiep = 0;
         }
       } catch (err) {
-        console.log(`${label} LOI: ${ep.title} - ${err.message}`);
-        failed.push(ep);
+        console.log(`${nhan} LOI: ${ep.title} - ${err.message}`);
+        hong.push(ep);
+        loiLienTiep += 1;
       }
 
-      // quay lai trang tac pham va danh dau lai (DOM co the da doi)
-      if (i + 1 < episodes.length) {
-        if (page.url() !== showUrl) {
-          await page.goto(showUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
-          await sleep(1500);
-        }
-        const again = await tagEpisodes(page, cfg.episodeSelector, cfg.episodeRe);
-        if (again.length >= episodes.length) episodes = again;
+      // Quay lai trang tac pham va danh dau lai (DOM co the da doi).
+      if (i + 1 < eps.length && page.url() !== showUrl) {
+        await page.goto(showUrl, { waitUntil: 'domcontentloaded' }).catch(() => {});
+        await sleep(1500);
+        const lai = await tagEpisodes(page, cfg.episodeSelector, cfg.episodeRe);
+        const map = new Map(lai.map((e) => [e.num, e]));
+        eps = eps.map((e) => map.get(e.num) || e);
       }
     }
   }
 
+  out.sort((a, b) => a.index - b.index);
   fs.writeFileSync(cfg.output, JSON.stringify(out, null, 2), 'utf8');
-  console.log(`\nDa xuat ${out.length} tap -> ${cfg.output}`);
-  if (failed.length) {
-    console.log(`${failed.length} tap that bai (thu tang WAIT_MS, hoac lam tay bang grab.js):`);
-    failed.forEach((f) => console.log('  - ' + (f.title || f.text)));
+
+  console.log(`\nDa xuat ${out.length} tap -> ${cfg.output}`
+    + (out.length ? `  (E${out[0].index} -> E${out[out.length - 1].index})` : ''));
+  if (hong.length) {
+    console.log(`${hong.length} tap khong lay duoc:`);
+    hong.slice(0, 10).forEach((f) => console.log('  - ' + (f.title || f.text)));
   }
-  console.log('\nTiep theo:\n  python hls_dl.py        (tu doc MANIFEST va OUTPUT_DIR trong .env)');
+  console.log('\nTiep theo:\n  python hls_dl.py');
 
   await ctx.close();
   process.exit(0);
