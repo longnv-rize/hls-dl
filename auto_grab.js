@@ -325,9 +325,28 @@ async function startPlayback(page) {
 
     let eps = eps0.filter((e) => (!cfg.from || e.num >= cfg.from) && (!cfg.to || e.num <= cfg.to));
     if (!eps.length) {
-      console.error(`\n${series}: khong nhan ra tap nao.`);
-      console.error('Kiem tra EPISODE_SELECTOR / EPISODE_TITLE_RE trong .env, hoac dan grab.js');
-      console.error('vao Console roi go HLS.probe() de xem trang cho ra nhung ten gi.');
+      // Truoc khi do loi cho selector, xem co phai trang dang doi dang nhap
+      // khong. Bao "khong nhan ra tap nao" trong truong hop do la chi sai
+      // huong: nguoi dung se di sua selector trong khi van de la chua dang nhap.
+      const tt = await page.evaluate(() => ({
+        url: location.href,
+        matKhau: !!document.querySelector('input[type="password"]'),
+        dauHieuUrl: /\/(log[-_]?in|sign[-_]?in|auth|account\/login)/i.test(location.href),
+      })).catch(() => null);
+
+      if (tt && (tt.matKhau || tt.dauHieuUrl)) {
+        console.error(`\n${series || showUrl}: trang dang DOI DANG NHAP`);
+        console.error(`  dang o: ${tt.url}`);
+        console.error('  Lam mot lan duy nhat nhu sau, cac lan sau tu dong:');
+        console.error('    1. Trong .env: HEADLESS=false va bo NO_LOGIN_PAUSE');
+        console.error('    2. Chay lai - trinh duyet mo ra, dang nhap bang tay, bam Enter');
+        console.error('    3. Phien duoc luu vao BROWSER_PROFILE; sau do dat lai HEADLESS=true');
+        console.error('  Khong dang nhap duoc bang tay thi dung grab.js trong trinh duyet.');
+      } else {
+        console.error(`\n${series}: khong nhan ra tap nao.`);
+        console.error('Kiem tra EPISODE_SELECTOR / EPISODE_TITLE_RE trong .env, hoac dan grab.js');
+        console.error('vao Console roi go HLS.probe() de xem trang cho ra nhung ten gi.');
+      }
       hong.push({ title: showUrl });
       continue;
     }

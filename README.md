@@ -151,6 +151,8 @@ Lần đầu trình duyệt dừng lại cho bạn **đăng nhập bằng tay**,
 
 Chạy từ script hoặc CI (không có terminal để bấm Enter) thì nó tự bỏ qua bước dừng, hoặc đặt `NO_LOGIN_PAUSE=true` để bỏ qua kể cả khi có terminal.
 
+**Trang bắt đăng nhập ngay từ đầu** thì nó nhận ra và nói thẳng, thay vì báo "không nhận ra tập nào" khiến bạn đi sửa nhầm selector. Cách xử lý vẫn là làm một lần: `HEADLESS=false`, đăng nhập bằng tay, bấm Enter — rồi đặt lại `HEADLESS=true` cho mọi lần sau.
+
 **Đã chạy thật** trên một trang công khai: cuộn tìm tập, bấm phát, bắt link, ghi manifest — ra đúng URL master playlist dùng được ngay.
 
 ## Cách 2 — thủ công (nhanh hơn nếu chỉ vài tập)
